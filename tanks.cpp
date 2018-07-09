@@ -1,18 +1,17 @@
 #include "tanks.h"
-#include "editor.h"
-#include "main_menu.h"
-#include "demo.h"
-#include <cstdio>
+#include "game_rendering.h"
 
-#include <new>
+#include "platform.cpp"
+#include "mesh_loading.cpp"
+#include "scene_printer.cpp"
+#include "stb.cpp"
+#include "opengl_renderer.cpp"
 
 // All globals:
 
 Platform* gPlatform = nullptr;
 Game* gGame = nullptr;
-Game_Memory* gGameMemory = nullptr;
-Game_State gMainMenuState;
-Game_State gEditorState;
+Game_Memory* gMem = nullptr;
 
 // TODO: query supported resolutions, start in fullscreen mode, etc.
 static Game_Resolution supportedResolutions[] = {
@@ -23,16 +22,6 @@ static Game_Resolution supportedResolutions[] = {
     Game_Resolution { 1600, 900  },
     Game_Resolution { 1920, 1080 },
 };
-
-template <typename T_, typename... Args_> static inline T_*
-arena_push(Memory_Arena* arena, Args_&&... args)
-{
-    if (arena->filled + sizeof(T_) > arena->size)
-        return nullptr;
-
-    arena->filled += sizeof(T_);
-    return new (arena->start) T_(args...);
-}
 
 static inline Game_Resolution
 tightest_supported_resolution(Game_Resolution candidate)
@@ -51,17 +40,18 @@ tightest_supported_resolution(Game_Resolution candidate)
 extern b32
 game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes)
 {
-    if (!arena_push<Game>(&memory->perm))
+    if (!(gGame = arena_push_new(memory->perm, Game)))
         return false;
 
     game_patch_after_hotload(memory, platform);
-    gGame->state = gMainMenuState;
 
     Game_Resolution closestResolution = tightest_supported_resolution(clientRes);
-    //printf("Closest Resolution: %ux%u\n", closestResolution.w, closestResolution.h);
+    //log_debug("Closest Resolution: %ux%u\n", closestResolution.w, closestResolution.h);
 
-    if (!demo_load(&gGame->demoScene, clientRes, closestResolution))
-        return false;
+    if (!renderer_init(&memory->perm, &gGame->rendererWorkspace)) return false;
+    gGame->renderCommandBuffer = arena_sub_allocate_push_buffer(memory->perm, Kilobytes(4), 16, "Game Render Commands");
+
+    gGame->camera.look_at(glm::vec3(0, 0, 5), glm::vec3(0, 1, 0));
 
     gGame->closestRes = closestResolution;
     gGame->clientRes  = clientRes;
@@ -71,39 +61,59 @@ game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes)
 extern void
 game_patch_after_hotload(Game_Memory* memory, Platform* platform)
 {
-    gGameMemory = memory;
-    gGame       = (Game*)memory->perm.start;
-    gPlatform   = platform;
-
-    grab_main_menu_state(&gGame->mainMenu);
-    grab_editor_state(&gGame->editor);
+    gMem      = memory;
+    gGame     = (Game*)memory->perm.start;
+    gPlatform = platform;
 }
 
-// TODO: move input handling out of update.
+static inline f32
+map_bilateral(s32 val, u32 range)
+{
+    return val/(range/2.0f);
+}
 
 extern void
 game_update(f32 dt)
 {
-    Game_State* curState  = &gGame->state;
-    Game_State* nextState = curState->update(curState);
-
-    if (nextState) {
-        curState->leave(curState->data);
-        nextState->enter(nextState->data);
-        *curState = *nextState;
+    Game_Keyboard& kb = gGame->input.keyboard;
+    if (kb.released(GK_ESCAPE)) {
+        gGame->shouldQuit = true;
     }
 
-    demo_update(&gGame->demoScene, &gGame->input, dt);
+    f32 camSpeed = 2*dt;
+    Camera& camera = gGame->camera;
+
+    if (kb.down(GK_W)) camera.forward_by(camSpeed);
+    if (kb.down(GK_S)) camera.forward_by(-camSpeed);
+    if (kb.down(GK_A)) camera.right_by(-camSpeed);
+    if (kb.down(GK_D)) camera.right_by(camSpeed);
+    if (kb.down(GK_E)) camera.up_by(camSpeed);
+
+    Game_Mouse_State& mouse = gGame->input.mouse.cur;
+    if (mouse.dragging) {
+        if (mouse.xDrag) {
+            f32 xDrag = map_bilateral(mouse.xDrag, gGame->clientRes.w);
+            camera.yaw_by(2*-xDrag);
+        }
+
+        if (mouse.yDrag) {
+            f32 yDrag = map_bilateral(mouse.yDrag, gGame->clientRes.h);
+            camera.pitch_by(2*yDrag);
+        }
+    }
+
+    // FPS-style clamping.
+    camera.up = glm::vec3(0.0f, 0.0f, 1.0f);
+
+    //log_debug("FPS: %f %f\n", gGame->frameStats.frameTimeAverage, dt);
 }
 
 extern void
 game_resize(Game_Resolution clientRes)
 {
-    // TODO: add resizing to states.
     Game_Resolution closestResolution = tightest_supported_resolution(clientRes);
     //printf("Resizing to: %ux%u\n", closestResolution.w, closestResolution.h);
 
-    demo_resize(&gGame->demoScene, clientRes, closestResolution);
     gGame->closestRes = closestResolution;
     gGame->clientRes  = clientRes;
 }
@@ -111,24 +121,36 @@ game_resize(Game_Resolution clientRes)
 extern void
 game_play_sound()
 {
-    Game_State* state = &gGame->state;
-    state->play_sound(state->data);
 }
 
 extern void
-game_render(f32 frameRatio)
+game_render(f32 /*frameRatio*/)
 {
-    Game_State* state = &gGame->state;
-    state->render(state->data, frameRatio);
-    demo_render(&gGame->demoScene);
+    push_buffer_scope(gGame->renderCommandBuffer);
+
+    set_clear_color(.4f, 0.0f, .6f, 1.0f);
+    set_projection_matrix(glm::perspective(glm::radians(gGame->camera.fov), 16.0f/9.0f, .1f, 100.0f));
+    set_view_matrix(gGame->camera.view_matrix());
+
+    begin_render_pass();
+
+    Grid grid = make_xy_grid(20, 20, &gMem->temp);
+    render_debug_lines(grid.vertices, grid.vertexCount, glm::vec4(.1, 0, .5, 1));
+
+    renderer_exec(&gGame->rendererWorkspace, gGame->renderCommandBuffer.arena.start,
+                  gGame->renderCommandBuffer.count);
+}
+
+extern void
+game_end_frame()
+{
+    arena_reset(gMem->temp);
 }
 
 extern void
 game_quit()
 {
-    demo_free(&gGame->demoScene);
 }
-
 
 // NOTE: not currently needed, so it's moved out of the way. It should be after update()
 extern void

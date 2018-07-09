@@ -7,8 +7,12 @@
 #endif
 
 #include <stdint.h>
+#include <stdarg.h>
 
-// NOTE(bmartin): the use of char here is mostly a joke; apparently, the int8 types
+#include "globals.h"
+#include "stb_sprintf.h"
+
+// NOTE(blake): the use of char here is mostly a joke; apparently, the int8 types
 // don't have to be chars, making certain casting business technically UB...
 
 using u8  = unsigned char;
@@ -26,14 +30,45 @@ using s64 = int64_t;
 
 using b32 = s32;
 
-// TODO: fast ints, least ints, etc.
+// TODO(blake): fast ints, least ints, etc.
 
 using f32 = float;
 using f64 = double;
 
+enum Log_Level
+{
+    LogLevel_Debug,
+    LogLevel_Info,
+    LogLevel_Warn,
+    LogLevel_Critical,
+};
+
+#define log_debug(fmtLiteral, ...) log_printf_(LogLevel_Debug,    "[DEBUG] "    __FILE__ ":%d: " fmtLiteral, __LINE__, __VA_ARGS__)
+#define log_info(fmtLiteral, ...)  log_printf_(LogLevel_Info,     "[INFO] "     __FILE__ ":%d: " fmtLiteral, __LINE__, __VA_ARGS__)
+#define log_warn(fmtLiteral, ...)  log_printf_(LogLevel_Warn,     "[WARNING] "  __FILE__ ":%d: " fmtLiteral, __LINE__, __VA_ARGS__)
+#define log_crit(fmtLiteral, ...)  log_printf_(LogLevel_Critical, "[CRITICAL] " __FILE__ ":%d: " fmtLiteral, __LINE__, __VA_ARGS__)
+
+extern void
+log_printf_(Log_Level level, const char* fmt, ...);
+
+
+#define PLATFORM_EXPAND_ARENA(name) b32 name(struct Memory_Arena* arena)
+typedef PLATFORM_EXPAND_ARENA(Platform_Expand_Arena);
+
+#define PLATFORM_READ_ENTIRE_FILE(name) void* name(const char* name, struct Memory_Arena* arena, umm* size, u32 alignment)
+typedef PLATFORM_READ_ENTIRE_FILE(Platform_Read_Entire_File);
+
+// len == -1 to assume nul-terminated.
+#define PLATFORM_LOG(name) void name(Log_Level level, const char* str, s32 len)
+typedef PLATFORM_LOG(Platform_Log);
 
 struct Platform
 {
-    b32 (*expand_arena)(struct Memory_Arena* arena) = nullptr;
-};
+    Platform_Expand_Arena* expand_arena = nullptr;
+    Platform_Expand_Arena* failed_expand_arena = nullptr;
 
+    Platform_Read_Entire_File* read_entire_file = nullptr;
+    Platform_Log* log = nullptr;
+
+    b32 initialized = false; // useful for asserts
+};

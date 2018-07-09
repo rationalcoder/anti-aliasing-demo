@@ -11,7 +11,7 @@ struct Camera
     glm::vec3 up = glm::vec3(0, 0, 1);
     glm::vec3 direction = glm::vec3(0, 1, 0);
     glm::vec3 position = glm::vec3(0, 0, 0);
-    float fov = 60;
+    float fov = 65;
 
     void translate(float x, float y, float z);
     void translate(const glm::vec3& offset);
@@ -198,6 +198,6 @@ look_at(const glm::vec3& target)
 inline glm::mat4 Camera::
 view_matrix()
 {
-    up = glm::vec3(0, 0, 1);
+    // up = glm::vec3(0, 0, 1);
     return glm::lookAt(position, position + direction, up);
 }

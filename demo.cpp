@@ -877,10 +877,11 @@ demo_update(Demo_Scene* scene, Game_Input* input, f32 dt)
     }
 
     Camera& camera = scene->common.camera;
-    if (kb.pressed(GK_2))
+    if (kb.pressed(GK_2)) {
         printf("Position: (%f, %f, %f), Direction: (%f, %f, %f)\n",
                camera.position.x, camera.position.y, camera.position.z,
                camera.direction.x, camera.direction.y, camera.direction.z);
+    }
 
     f32 camSpeed = dt;
 

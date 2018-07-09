@@ -7,10 +7,8 @@ DEFINES -= UNICODE
 
 HEADERS += tanks.h \
     platform.h \
-    editor.h \
-    main_menu.h \
+    memory.h \
     mesh.h \
-    demo.h \
     input.h \
     primitives.h \
     common.h \
@@ -18,17 +16,20 @@ HEADERS += tanks.h \
     scene_printer.h \
     mesh_loading.h \
     stb_image.h \
-    stb_truetype.h
-
-SOURCES += win32_tanks.cpp \
+    stb_truetype.h \
     tanks.cpp \
-    main_menu.cpp \
-    editor.cpp \
-    demo.cpp \
+    stb.cpp \
+    win32_tanks.h \
     mesh_loading.cpp \
     scene_printer.cpp \
-    stb_image.cpp \
-    stb_truetype.cpp
+    globals.h \
+    platform.cpp \
+    renderer.h \
+    opengl_renderer.cpp \
+    game_rendering.h \
+    opengl_renderer.h
+
+SOURCES += win32_tanks.cpp \
 
 INCLUDEPATH += D:/projects/middleware/assimp4/include
 #INCLUDEPATH += D:/projects/middleware/SDL2-2.0.4/include

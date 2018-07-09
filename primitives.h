@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include "platform.h"
 
-enum ctor { unitialized };
+enum ctor { uninitialized };
 
 // Bitsets, fields, and flags:
 
@@ -98,6 +98,9 @@ struct Array_View
     Array_View() : data(nullptr), size(0) {}
     Array_View(T_* data, Size_ size) : data(data), size(size) {}
 
+    const T_& operator[](Size_ i) const { return data[i]; }
+     T_&      operator[](Size_ i)       { return data[i]; }
+
     const T_* begin() const { return data; }
     T_*       begin()       { return data; }
 
@@ -106,30 +109,23 @@ struct Array_View
 
     const T_* cbegin() const { return data; }
     T_*       cend()   const { return data + size; }
+
+    operator bool() { return data != nullptr; }
 };
 
-template <typename T_> using array_view8  = Array_View<T_, u8>;
-template <typename T_> using array_view16 = Array_View<T_, u16>;
-template <typename T_> using array_view32 = Array_View<T_, u32>;
-template <typename T_> using array_view64 = Array_View<T_, u64>;
+template <typename T_> using view8  = Array_View<T_, u8>;
+template <typename T_> using view16 = Array_View<T_, u16>;
+template <typename T_> using view32 = Array_View<T_, u32>;
+template <typename T_> using view64 = Array_View<T_, u64>;
 
-using buffer_view8  = Array_View<u8, u8>;
-using buffer_view16 = Array_View<u8, u16>;
-using buffer_view32 = Array_View<u8, u32>;
-using buffer_view64 = Array_View<u8, u64>;
+using buffer8  = Array_View<u8, u8>;
+using buffer16 = Array_View<u8, u16>;
+using buffer32 = Array_View<u8, u32>;
+using buffer64 = Array_View<u8, u64>;
 
 template <typename T_, typename Size_> inline Array_View<T_, Size_>
-make_view(T_* data, Size_ size) { return Array_View<T_, u8>(data, size); }
-
-template <typename T_, u8 Size_> inline Array_View<T_, u8>
-make_view(T_ (&data)[Size_]) { return Array_View<T_, u8>(data, Size_); }
-
-template <typename T_, u16 Size_> inline Array_View<T_, u16>
-make_view(T_ (&data)[Size_]) { return Array_View<T_, u16>(data, Size_); }
+view_of(T_* data, Size_ size) { return Array_View<T_, Size_>(data, size); }
 
 template <typename T_, u32 Size_> inline Array_View<T_, u32>
-make_view(T_ (&data)[Size_]) { return Array_View<T_, u32>(data, Size_); }
-
-template <typename T_, u64 Size_> inline Array_View<T_, u64>
-make_view(T_ (&data)[Size_]) { return Array_View<T_, u64>(data, Size_); }
+view_of(T_ (&data)[Size_]) { return Array_View<T_, u32>(data, Size_); }
 

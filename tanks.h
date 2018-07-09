@@ -1,13 +1,14 @@
 #pragma once
 
 #include "common.h"
+#include "memory.h"
+
 #include "platform.h"
 #include "primitives.h"
 #include "input.h"
+#include "camera.h"
 
-#include "editor.h"
-#include "main_menu.h"
-#include "demo.h"
+//#include "demo.h"
 
 constexpr u32 us_per_update() { return 5000; }
 constexpr b32 should_step()   { return false; }
@@ -25,18 +26,6 @@ struct Game_Frame_Stats
     f32 fps() const { return (f32)(1000000/frameTimeAverage); }
 };
 
-struct Memory_Arena
-{
-    const char* tag;
-
-    void* start;
-    void* next;
-
-    umm filled;
-    umm size;
-    umm max;
-};
-
 struct Game_State
 {
     void* data                   = nullptr;
@@ -49,19 +38,17 @@ struct Game_State
 
 struct Game
 {
-    Game_State state;
-    Game_State editorState;
-    Game_State mainMenuState;
-
     Game_Frame_Stats frameStats;
     Game_Input input;
     Game_Resolution closestRes;
     Game_Resolution clientRes;
 
-    Main_Menu mainMenu;
-    Editor editor;
+    Camera camera;
 
-    Demo_Scene demoScene;
+    // Demo_Scene demoScene;
+
+    Memory_Arena rendererWorkspace; // for the actual renderer
+    Push_Buffer renderCommandBuffer;
 
     b32 shouldQuit = false;
 };
@@ -78,14 +65,14 @@ struct Game_Memory
 // NOTE: the platform layer will fill the actual memory fields out 
 // and pass it back to us in game_init().
 inline Game_Memory
-game_get_memory_requirements()
+game_get_memory_request(Platform* platform)
 {
     Game_Memory request = {};
 
     Memory_Arena& perm = request.perm;
     perm.tag  = "Permanent Storage";
     perm.size = Kilobytes(16);
-    perm.max  = Gigabytes(4);
+    perm.max  = Megabytes(1);
 
     Memory_Arena& temp = request.temp;
     temp.tag  = "Temporary Storage";
@@ -97,12 +84,13 @@ game_get_memory_requirements()
     file.size = Megabytes(1);
     file.max  = Megabytes(8);
 
+    // XXX NOTE(blake): where/how this CB is set highly subject to change.
+    assert(platform->initialized);
+    for (Memory_Arena& arena : request.arenas)
+        arena.expand = platform->expand_arena;
+
     return request;
 }
-
-extern Game* gGame;
-extern Game_Memory* gGameMemory;
-extern Platform* gPlatform;
 
 extern b32
 game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes);
