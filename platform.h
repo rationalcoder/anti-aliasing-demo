@@ -10,7 +10,9 @@
 #include <stdarg.h>
 
 #include "globals.h"
-#include "stb_sprintf.h"
+
+// NOTE(blake): the standard ones confuse Qt Creator.
+#define MAX_UINT(type) ~(type)0
 
 // NOTE(blake): the use of char here is mostly a joke; apparently, the int8 types
 // don't have to be chars, making certain casting business technically UB...
@@ -41,18 +43,20 @@ enum Log_Level
     LogLevel_Info,
     LogLevel_Warn,
     LogLevel_Critical,
+    LogLevel_Fatal,
 };
 
 #define log_debug(fmtLiteral, ...) log_printf_(LogLevel_Debug,    "[DEBUG] "    __FILE__ ":%d: " fmtLiteral, __LINE__, __VA_ARGS__)
 #define log_info(fmtLiteral, ...)  log_printf_(LogLevel_Info,     "[INFO] "     __FILE__ ":%d: " fmtLiteral, __LINE__, __VA_ARGS__)
 #define log_warn(fmtLiteral, ...)  log_printf_(LogLevel_Warn,     "[WARNING] "  __FILE__ ":%d: " fmtLiteral, __LINE__, __VA_ARGS__)
 #define log_crit(fmtLiteral, ...)  log_printf_(LogLevel_Critical, "[CRITICAL] " __FILE__ ":%d: " fmtLiteral, __LINE__, __VA_ARGS__)
+#define log_fatal(fmtLiteral, ...) log_printf_(LogLevel_Fatal,    "[FATAL] "    __FILE__ ":%d: " fmtLiteral, __LINE__, __VA_ARGS__)
 
 extern void
 log_printf_(Log_Level level, const char* fmt, ...);
 
 
-#define PLATFORM_EXPAND_ARENA(name) b32 name(struct Memory_Arena* arena)
+#define PLATFORM_EXPAND_ARENA(name) b32 name(struct Memory_Arena* arena, umm size)
 typedef PLATFORM_EXPAND_ARENA(Platform_Expand_Arena);
 
 #define PLATFORM_READ_ENTIRE_FILE(name) void* name(const char* name, struct Memory_Arena* arena, umm* size, u32 alignment)
@@ -72,3 +76,5 @@ struct Platform
 
     b32 initialized = false; // useful for asserts
 };
+
+

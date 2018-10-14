@@ -2,13 +2,18 @@
 #include <assert.h>
 #include "platform.h"
 
-// NOTE: needed a place to put things to avoid having demo.h include tanks.h
+#ifdef TANKS_RARE_ASSERT
+    #define RareAssert(expr) assert(expr)
+#else
+    #define RareAssert(expr) ((void)0)
+#endif
 
 #define Gigabytes(x) (x * (1ULL << 30))
 #define Megabytes(x) (x * (1ULL << 20))
 #define Kilobytes(x) (x * (1ULL << 10))
 
 #define InvalidCodePath() assert(!"Invalid code path.");
+#define NotImplemented() assert(!"Not Implemented.");
 #define ArraySize(arr) (sizeof(arr)/sizeof((arr)[0]))
 
 #define FieldCount(type, field) (offsetof(type, field)/sizeof(field))
@@ -30,16 +35,15 @@ static_assert(sizeof(CONCAT(_anon_array, counter)) % sizeof(type) == 0,\
 FIELD_ARRAY_IMPL(type, name, structDefinition, __COUNTER__)
 
 template <typename Func_>
-struct Defer_Impl {
+struct Defer_Impl 
+{
     Func_ f_;
     Defer_Impl(Func_ f) : f_(f) {}
     ~Defer_Impl() { f_(); }
 };
 
 template <typename Func_>
-Defer_Impl<Func_> defer_func(Func_ f) {
-    return Defer_Impl<Func_>(f);
-}
+Defer_Impl<Func_> defer_func(Func_ f) { return Defer_Impl<Func_>(f); }
 
 #define DEFER_1(x, y) x##y
 #define DEFER_2(x, y) DEFER_1(x, y)
@@ -64,7 +68,7 @@ operator != (Game_Resolution lhs, Game_Resolution rhs)
     return !(lhs == rhs);
 }
 
-template <typename To_, typename From_> static inline To_
+template <typename To_, typename From_> inline To_
 down_cast(From_ from)
 {
     To_ result = (To_)from;
@@ -73,12 +77,20 @@ down_cast(From_ from)
     return result;
 }
 
-static inline void
-copy_memory(void* dest, const void* src, u32 n)
+template <typename To_> inline To_
+down_cast(void* from)
 {
-    for (u32 i = 0; i < n; i++)
-        ((u8*)dest)[i] = ((u8*)src)[i];
+    To_ result = (To_)(uptr)from;
+    assert((uptr)result == (uptr)from);
+
+    return result;
 }
+
+// NOTE(bmartin): manual overloading to handle ambiguity with type deduction when literals are passed.
+inline void right_rotate_value(u8&  value, u8  min, u8  max, u8  step = 1) { value = value == max ? min : value + step; }
+inline void right_rotate_value(u16& value, u16 min, u16 max, u16 step = 1) { value = value == max ? min : value + step; }
+inline void right_rotate_value(u32& value, u32 min, u32 max, u32 step = 1) { value = value == max ? min : value + step; }
+inline void right_rotate_value(u64& value, u64 min, u64 max, u64 step = 1) { value = value == max ? min : value + step; }
 
 extern struct Game* gGame;
 extern struct Game_Memory* gMem;

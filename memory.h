@@ -1,4 +1,6 @@
 #pragma once
+#include <memory>
+
 #include "platform.h"
 #include "primitives.h"
 
@@ -7,6 +9,7 @@ struct Memory_Arena
     const char* tag;
 
     Platform_Expand_Arena* expand;
+    void* user;
 
     void* start;
     void* at;
@@ -20,7 +23,17 @@ struct Push_Buffer
 {
     Memory_Arena arena;
     u32 count;
+
+    Push_Buffer& operator = (Memory_Arena arena) noexcept;
 };
+
+inline Push_Buffer&
+Push_Buffer::operator = (Memory_Arena arena) noexcept
+{
+    this->arena = arena;
+    this->count = 0;
+    return *this;
+}
 
 inline b32
 is_aligned(void* address, s32 alignPow2)
@@ -64,41 +77,52 @@ aligned_offset(void* address, u32 offset, s32 alignPow2)
 }
 
 inline umm
-arena_size(Memory_Arena& arena, umm elemSize = 1)
+arena_size(Memory_Arena& arena)
 {
-    umm result = ((u8*)arena.at - (u8*)arena.start) / elemSize;
+    umm result = ((u8*)arena.at - (u8*)arena.start);
     return result;
 } 
 
-// NOTE(blake): extra macros for now to enable FILE/LINE stuff later.
-
-#define arena_reset arena_reset_
+inline umm
+arena_size(Memory_Arena& arena, umm elemSize)
+{
+    //umm result = ((u8*)arena.at - (u8*)arena.start) / elemSize;
+    umm result = arena_size(arena) / elemSize;
+    return result;
+} 
 
 inline void
-arena_reset_(Memory_Arena& arena)
+reset(Memory_Arena& arena)
 {
     arena.at = arena.start;
 }
 
 inline void
-arena_reset_(Memory_Arena& arena, void* to)
+reset(Memory_Arena& arena, void* to)
 {
     arena.at = to;
 }
 
-#define arena_push arena_push_
-#define arena_push_array(arena, n, type) (type*)arena_push_(arena, (n)*sizeof(type), alignof(type))
-#define arena_push_type(arena, type) ((type*)arena_push_(arena, sizeof(type), alignof(type)))
-#define arena_push_new(arena, type, ...) (new (arena_push_(arena, sizeof(type), alignof(type))) (type)(__VA_ARGS__))
+inline void
+reset(Push_Buffer& buffer)
+{
+    reset(buffer.arena);
+    buffer.count = 0;
+}
+
+#define push_array(arena, n, type) (type*)push(arena, (n)*sizeof(type), alignof(type))
+#define push_array_copy(arena, n, type, data) (type*)push_copy(arena, (n)*sizeof(type), alignof(type), data)
+#define push_type(arena, type) ((type*)push(arena, sizeof(type), alignof(type)))
+#define push_new(arena, type, ...) (new (push(arena, sizeof(type), alignof(type))) (type)(__VA_ARGS__))
 
 inline void*
-arena_push_(Memory_Arena& arena, umm size, u32 alignment)
+push(Memory_Arena& arena, umm size, u32 alignment)
 {
     u8* at = (u8*)align_up(arena.at, alignment);
     u8* nextAt = at + size;
 
-    if (nextAt >= (u8*)arena.next) {
-        if (!arena.expand(&arena))
+    if (nextAt > (u8*)arena.next) {
+        if (!arena.expand(&arena, nextAt - (u8*)arena.at))
             return nullptr;
     }
 
@@ -106,16 +130,14 @@ arena_push_(Memory_Arena& arena, umm size, u32 alignment)
     return at;
 }
 
-#define arena_push_bytes arena_push_bytes_
-
 inline void*
-arena_push_bytes_(Memory_Arena& arena, umm size)
+push_bytes(Memory_Arena& arena, umm size)
 {
     u8* at = (u8*)arena.at;
     u8* nextAt = at + size;
 
-    if (nextAt >= (u8*)arena.next) {
-        if (!arena.expand(&arena))
+    if (nextAt > (u8*)arena.next) {
+        if (!arena.expand(&arena, size))
             return nullptr;
     }
 
@@ -123,13 +145,31 @@ arena_push_bytes_(Memory_Arena& arena, umm size)
     return at;
 }
 
-#define arena_sub_allocate arena_sub_allocate_
+inline void*
+push_zero(Memory_Arena& arena, umm size, u32 alignment)
+{
+    void* space = push(arena, size, alignment);
+    memset(space, 0, size);
+
+    return space;
+}
+
+inline void*
+push_copy(Memory_Arena& arena, umm size, u32 alignment, void* data)
+{
+    void* space = push(arena, size, alignment);
+    memcpy(space, data, size);
+
+    return space;
+}
+
+#define sub_allocate(...) sub_allocate_(__VA_ARGS__)
 
 inline Memory_Arena
-arena_sub_allocate_(Memory_Arena& arena, umm size, u32 alignment, const char* tag,
-                    Platform_Expand_Arena* expand = gPlatform->failed_expand_arena)
+sub_allocate_(Memory_Arena& arena, umm size, u32 alignment, const char* tag,
+             Platform_Expand_Arena* expand = gPlatform->failed_expand_arena)
 {
-    void* start = arena_push_(arena, size, alignment);
+    void* start = push(arena, size, alignment);
 
     Memory_Arena result;
     result.tag    = tag;
@@ -143,33 +183,10 @@ arena_sub_allocate_(Memory_Arena& arena, umm size, u32 alignment, const char* ta
     return result;
 }
 
-#define arena_sub_allocate_push_buffer arena_sub_allocate_push_buffer_
-
-inline Push_Buffer
-arena_sub_allocate_push_buffer_(Memory_Arena& arena, umm size, u32 alignment, const char* tag,
-                                Platform_Expand_Arena* expand = gPlatform->failed_expand_arena)
-{
-    void* start = arena_push_(arena, size, alignment);
-
-    Push_Buffer result;
-
-    result.arena.tag    = tag;
-    result.arena.expand = expand;
-    result.arena.start  = start;
-    result.arena.at     = start;
-    result.arena.next   = (u8*)start + size;
-    result.arena.size   = size;
-    result.arena.max    = ~(umm)0; // max doesn't really make sense but inf is the most reasonable value.
-    result.count        = 0;
-
-    return result;;
-}
-
-#define arena_pop arena_pop_
-#define arena_pop_type(arena, type) arena_pop_(arena, sizeof(type))
+#define pop_type(arena, type) pop(arena, sizeof(type))
 
 inline void
-arena_pop_(Memory_Arena& arena, umm size)
+pop(Memory_Arena& arena, umm size)
 {
     (u8*&)arena.at -= size;
 }
@@ -179,9 +196,9 @@ struct Arena_Allocator
 {
     Memory_Arena* arena = nullptr;
 
-    T_* allocate(umm) { return arena_push_bytes(*arena, sizeof(T_)); }
+    T_* allocate(umm) { return push_bytes(*arena, sizeof(T_)); }
     // @Hack: these can only be deallocated in order.
-    void deallocate(T_*, umm) { arena_pop(*arena, sizeof(T_)); }
+    void deallocate(T_*, umm) { pop(*arena, sizeof(T_)); }
 
     bool operator == (Arena_Allocator<T_> rhs) { return arena == rhs.arena; }
     bool operator != (Arena_Allocator<T_> rhs) { return arena != rhs.arena; }
@@ -193,7 +210,7 @@ struct Memory_Arena_Scope
     void* oldAt;
 
     Memory_Arena_Scope(Memory_Arena* arena) : arena(arena) { oldAt = arena->at; }
-    ~Memory_Arena_Scope() { arena_reset(*arena, oldAt); }
+    ~Memory_Arena_Scope() { reset(*arena, oldAt); }
 };
 
 #define arena_scope_impl(arena, counter) Memory_Arena_Scope _arenaScope##counter{&arena}
@@ -205,13 +222,19 @@ struct Push_Buffer_Scope
     void* oldAt;
 
     Push_Buffer_Scope(Push_Buffer* buffer) : buffer(buffer) { oldAt = buffer->arena.at; }
-    ~Push_Buffer_Scope() { arena_reset(buffer->arena, oldAt); buffer->count = 0; }
+    ~Push_Buffer_Scope() { reset(buffer->arena, oldAt); buffer->count = 0; }
 };
 
 #define push_buffer_scope_impl(buffer, counter) Push_Buffer_Scope _pushBufferScope##counter{&buffer}
 #define push_buffer_scope(buffer) push_buffer_scope_impl(buffer, __COUNTER__);
 
+#define temp_scope() defer(reset(gMem->temp);)
+
 // Extended Types
+
+// Simple, tiny list stuff for API boundaries
+#define list_push(list, p) (((p)->next = (list)), p)
+
 
 #if 0 // @Incomplete
 
@@ -225,11 +248,42 @@ struct Bucket
     Bucket(Bucket<T_, Size_>* next) : next(next) {}
 };
 
-template <typename T_, u32 Size_>
-struct Bucket_Array
+// TODO(blake): more generic btree (Bucket_Tree, since that is a better name for it).
+
+struct Bucket_Array_Node
 {
-    using Bucket_Type = Bucket<T_, Size_>;
-    Memory_Arena* arena;
+    Bucket_Array_Node* left;
+    Bucket_Array_Node* right;
+    void* bucket;
+    u32   bucketIndex;
+};
+
+struct Hoisted_Bucket_Array
+{
+    Memory_Arena*      _arena;
+    Bucket_Array_Node* _tree;
+
+    // NOTE(blake): special root function for easier invariants during insert.
+    void allocate_root(void* bucket, u32 index);
+    void insert_bucket(void* bucket, u32 index);
+};
+
+inline void
+Hoisted_Bucket_Array::allocate_root(void* bucket, u32 index)
+{
+    _tree = push_type(*_arena, Bucket_Array_Node);
+    _tree->;
+}
+
+inline void
+Hoisted_Bucket_Array::insert_bucket(void* bucket, u32 index)
+{
+}
+
+template <typename T_, u32 BucketSize_>
+struct Bucket_Array : Hoisted_Bucket_Array
+{
+    using Bucket_Type = Bucket<T_, BucketSize_>;
 
     Bucket_Type* _head;
     Bucket_Type* _cur;
@@ -239,32 +293,34 @@ struct Bucket_Array
     Bucket_Array(Memory_Arena& arena);
     Bucket_Array(ctor) {}
 
-    void create_reserve(Memory_Arena& arena, u32 _bucketCount);
+    void create_reserve(Memory_Arena& arena, u32 bucketCount);
     void add(T_ val);
 };
 
-template <typename T_, u32 Size_> inline
-Bucket_Array<T_, Size_>::Bucket_Array(Memory_Arena* arena)
-    : arena(arena), _bucketCount(_bucketCount)
+template <typename T_, u32 BucketSize_> inline
+Bucket_Array<T_, BucketSize_>::Bucket_Array(Memory_Arena* arena)
+    : _arena(arena), _bucketCount(1)
 {
-    _head = arena_push_type(*arena, Bucket_Type);
+    _head = push_type(*arena, Bucket_Type);
     _head->next = nullptr;
 
     _cur = _head;
     _at  = &_head->data[0];
 }
 
-template <typename T_, u32 Size_> inline void
-Bucket_Array<T_, Size_>::create_reserve(Memory_Arena* arena, u32 bucketCount)
+template <typename T_, u32 BucketSize_> inline void
+Bucket_Array<T_, BucketSize_>::create_reserve(Memory_Arena* arena, u32 bucketCount)
 {
-    _head = arena_push_type(*arena, Bucket_Type);
+    _head = push_type(*arena, Bucket_Type);
     _cur  = _head;
     _at   = (T_*)_head->data;
+    allocate_root(_head, 0);
 
-    for (u32 i = 0; i < bucketCount-1; i++) {
-        Bucket_Type* newBucket = arena_push_type(*arena, Bucket_Type);
+    for (u32 i = 1; i < bucketCount; i++) {
+        Bucket_Type* newBucket = push_type(*arena, Bucket_Type);
         _cur->next = newBucket;
         _cur       = newBucket;
+        insert_bucket(newBucket, i);
     }
 
     _cur->next = nullptr;
@@ -273,9 +329,24 @@ Bucket_Array<T_, Size_>::create_reserve(Memory_Arena* arena, u32 bucketCount)
     _bucketCount = bucketCount;
 }
 
-template <typename T_, u32 Size_> inline void
-Bucket_Array<T_, Size_>::add(T_ val)
+template <typename T_, u32 BucketSize_> inline void
+Bucket_Array<T_, BucketSize_>::add(T_ val)
 {
+    if (_at < _cur->end()) {
+        *_at++ = val;
+        return;
+    }
+
+    Bucket_Type* next = push_type(*_arena, Bucket_Type);
+    _cur->next = next;
+    _cur       = next;
+    next->next = nullptr;
+
+    T_* nextAt = &next->data[0];
+    *nextAt    = val;
+    _at        = nextAt;
+
+    insert_bucket(next, _bucketCount++);
 }
 
 #endif

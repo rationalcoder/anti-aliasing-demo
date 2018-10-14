@@ -1,3 +1,4 @@
+#include "stb_sprintf.h"
 #include "platform.h"
 #include "tanks.h"
 
@@ -6,7 +7,7 @@ push_stbsp_temp_storage(char* /*str*/, void* /*userData*/, int len)
 {
     if (len < STB_SPRINTF_MIN) return NULL;
 
-    return (char*)arena_push_bytes(gMem->temp, STB_SPRINTF_MIN);
+    return (char*)push_bytes(gMem->temp, STB_SPRINTF_MIN);
 }
 
 // @HackLeaf: move to tprintf or whatever once that's there.
@@ -22,6 +23,6 @@ log_printf_(Log_Level level, const char* fmt, ...)
     gPlatform->log(level, buffer, written);
 
     // NOTE: not necessary b/c temp gets cleared every frame, but whatever.
-    arena_pop(gMem->temp, written);
+    pop(gMem->temp, written);
     va_end(va);
 }

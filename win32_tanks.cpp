@@ -275,23 +275,6 @@ win32_poll_events(Win32_State* state)
     win32_poll_xinput(state);
 }
 
-static inline void
-win32_update_frame_stats(Game_Frame_Stats* stats, u32 frameTimeMicro)
-{
-    // TODO: callback on frame time misses?
-
-    if (stats->framesAveraged == frames_to_average()) {
-        stats->framesAveraged = 1;
-        stats->frameTimeAverage = frameTimeMicro;
-        stats->frameTimeAccumulator = 0;
-    }
-    else {
-        stats->frameTimeAccumulator += frameTimeMicro;
-        stats->frameTimeAverage = ((f64)stats->frameTimeAccumulator)/stats->framesAveraged;
-        stats->framesAveraged++;
-    }
-}
-
 static void 
 win32_game_loop(Win32_State* win32State)
 {
@@ -300,6 +283,8 @@ win32_game_loop(Win32_State* win32State)
 
     LARGE_INTEGER prev;
     QueryPerformanceCounter(&prev);
+
+    LARGE_INTEGER soundPrev = prev;
 
     u32 lagMicro  = 0;
     u32 stepMicro = us_per_update();
@@ -325,7 +310,7 @@ win32_game_loop(Win32_State* win32State)
             return;
 
         // Make sure that the first frame average isn't bogus, not that it really matters.
-        if (!firstFrame) { win32_update_frame_stats(&gGame->frameStats, (u32)elapsed.QuadPart); }
+        if (!firstFrame) { gGame->frameStats.frameTimeWindow.add((u32)elapsed.QuadPart); }
         else             { firstFrame = false; }
 
         // Consume lag for updating in fixed steps.
@@ -334,7 +319,16 @@ win32_game_loop(Win32_State* win32State)
                 game_step();
         }
 
-        game_play_sound();
+        LARGE_INTEGER soundCurrent;
+        QueryPerformanceCounter(&soundCurrent);
+
+        LARGE_INTEGER soundElapsed;
+        soundElapsed.QuadPart = soundCurrent.QuadPart - soundPrev.QuadPart;
+        soundElapsed.QuadPart *= 1000000;
+        soundElapsed.QuadPart /= frequency.QuadPart;
+
+        soundPrev = soundCurrent;
+        game_play_sound(soundElapsed.QuadPart);
 
         if (should_step()) { game_render(lagMicro/(f32)stepMicro); }
         else               { game_render(1); }
@@ -584,6 +578,8 @@ win32_allocate_memory(Win32_State* state, Game_Memory* request)
     umm firstChunkOffset = 0;
     for (int i = 0; i < kArenaCount; i++) {
         Memory_Arena& arena  = request->arenas[i];
+        assert(arena.size % state->pageSize == 0 && arena.max % state->pageSize == 0 &&
+               "Arena size and max values must be in multiples of the page size.");
 
         firstChunkOffsets[i] = firstChunkOffset;
         fullContiguousSize  += arena.max;
@@ -596,34 +592,46 @@ win32_allocate_memory(Win32_State* state, Game_Memory* request)
     u8* contiguousRegion = (u8*)VirtualAlloc(NULL, fullContiguousSize, MEM_RESERVE, PAGE_NOACCESS);
     assert(contiguousRegion);
 
-    // Go through and commit arena memory and fill out the structs.
+    // Go through and commit the first chunks of each arena and fill out the structs.
     for (int i = 0; i < kArenaCount; i++) {
         Memory_Arena& arena = request->arenas[i];
-        assert(arena.start = VirtualAlloc(contiguousRegion + firstChunkOffsets[i], arena.size,
-                                          MEM_COMMIT, PAGE_READWRITE));
-        arena.at     = arena.start;
-        arena.next   = (u8*)arena.start + arena.size;
+        arena.start = VirtualAlloc(contiguousRegion + firstChunkOffsets[i], arena.size, MEM_COMMIT, PAGE_READWRITE);
+        assert(arena.start);
+
+        arena.at   = arena.start;
+        arena.next = (u8*)arena.start + arena.size;
     }
 
     state->contiguousRegion = contiguousRegion;
 }
 
 static b32
-win32_failed_expand_arena(Memory_Arena* arena)
+win32_failed_expand_arena(Memory_Arena* arena, umm size)
 {
-    fprintf(stderr, "(WIN32): Failed to expand the '%s' arena!\n", arena->tag);
+    fprintf(stderr, "(WIN32): Failed to expand the '%s' arena! Last allocation was %llu bytes.\n", arena->tag, size);
     assert(!"arena expansion failure");
 
     return false;
 }
 
 static b32
-win32_expand_arena(Memory_Arena* arena)
+win32_expand_arena(Memory_Arena* arena, umm size)
 {
-    if (!VirtualAlloc((u8*)arena->next, arena->size, MEM_COMMIT, PAGE_READWRITE))
-        return win32_failed_expand_arena(arena);
+    u8* at = (u8*)arena->at;
+    if (at + size > at + arena->max)
+        return win32_failed_expand_arena(arena, size);
 
-    (u8*&)arena->next += arena->size;
+    RareAssert(is_aligned(arena->next, 4096));
+    RareAssert((u8*)arena->next >= at);
+
+    // Acount for the space still left in the current chunk.
+    umm neededSize       = size - ((u8*)arena->next - at);
+    umm neededSizePadded = (umm)align_up((void*)neededSize, (s32)arena->size);
+
+    if (!VirtualAlloc((u8*)arena->next, neededSizePadded, MEM_COMMIT, PAGE_READWRITE))
+        return win32_failed_expand_arena(arena, size);
+
+    (u8*&)arena->next += neededSizePadded;
 
     return true;
 }
@@ -637,12 +645,12 @@ win32_read_entire_file(const char* name, Memory_Arena* arena, umm* size, u32 ali
         return false;
 
     LARGE_INTEGER fileSize = {};
-    assert(GetFileSizeEx(file, &fileSize));
+    GetFileSizeEx(file, &fileSize);
 
     void* start = arena->at;
 
     DWORD bytesRead = 0;
-    if (!ReadFile(file, arena_push(*arena, fileSize.QuadPart, alignment),
+    if (!ReadFile(file, push(*arena, fileSize.QuadPart, alignment),
                   down_cast<DWORD>(fileSize.QuadPart), &bytesRead, NULL)) {
         return NULL;
     }
@@ -689,11 +697,11 @@ win32_init(Win32_State* state, Platform* platformOut, Game_Memory* memoryOut,
     state->pageSize  = sysInfo.dwPageSize;
     state->coreCount = sysInfo.dwNumberOfProcessors;
 
-    // TODO: do better than asserts.
-    assert(win32_setup_console(state));
-    assert(win32_register_window_classes(instance));
-    assert(win32_create_opengl_window(state, instance, windowRes.w, windowRes.h));
-    assert(win32_grab_opengl_functions(state));
+    win32_setup_console(state);
+    win32_register_window_classes(instance);
+    win32_create_opengl_window(state, instance, windowRes.w, windowRes.h);
+    win32_grab_opengl_functions(state);
+
     // printf("OpenGL Version: %s\n", glGetString(GL_VERSION));
 
     win32_grab_platform(platformOut);
@@ -730,7 +738,7 @@ WinMain(HINSTANCE /* hInstance */,
     Platform platform;
     win32_init(&gWin32State, &platform, &memory, windowRes, &clientRes);
 
-    assert(game_init(&memory, &platform, clientRes));
+    game_init(&memory, &platform, clientRes);
     win32_show_window(&gWin32State);
 
     gWin32State.game = gGame;

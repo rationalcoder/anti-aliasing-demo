@@ -84,6 +84,8 @@ struct Game_Mouse
 {
     Game_Mouse_State cur;
     Game_Mouse_State prev;
+
+    b32 drag_started() const { return !prev.dragging && cur.dragging; }
 };
 
 struct Game_Controller
@@ -234,4 +236,40 @@ Game_Keyboard::down_exactly(Game_Key key, Game_Keymod mod) const
     b32 isDown = (cur.mod[key] & mod) == mod && cur.keys.is_set(key);
 
     return isDown;
+}
+
+struct Input_Smoother
+{
+    f32 mouseDragXValues[3] = {};
+    f32 mouseDragYValues[3] = {};
+    f32_window mouseDragYWindow;
+    f32_window mouseDragXWindow;
+
+    Input_Smoother();
+
+    auto smooth_mouse_drag(f32 x, f32 y) -> v2;
+    auto reset_mouse_drag() -> void;
+};
+
+inline
+Input_Smoother::Input_Smoother()
+{
+    mouseDragXWindow.reset(mouseDragXValues, ArraySize(mouseDragXValues), 0);
+    mouseDragYWindow.reset(mouseDragYValues, ArraySize(mouseDragYValues), 0);
+}
+
+inline v2
+Input_Smoother::smooth_mouse_drag(f32 x, f32 y)
+{
+    mouseDragXWindow.add(x);
+    mouseDragYWindow.add(y);
+
+    return v2(mouseDragXWindow.average, mouseDragYWindow.average);
+}
+
+inline void
+Input_Smoother::reset_mouse_drag()
+{
+    mouseDragXWindow.reset(0);
+    mouseDragYWindow.reset(0);
 }

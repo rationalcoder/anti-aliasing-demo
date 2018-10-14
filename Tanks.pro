@@ -13,21 +13,20 @@ HEADERS += tanks.h \
     primitives.h \
     common.h \
     camera.h \
-    scene_printer.h \
-    mesh_loading.h \
     stb_image.h \
     stb_truetype.h \
     tanks.cpp \
     stb.cpp \
     win32_tanks.h \
-    mesh_loading.cpp \
-    scene_printer.cpp \
     globals.h \
     platform.cpp \
     renderer.h \
+    opengl_renderer.h \
     opengl_renderer.cpp \
     game_rendering.h \
-    opengl_renderer.h
+    buffer.h \
+    obj_file.h \
+    obj_file.cpp
 
 SOURCES += win32_tanks.cpp \
 
