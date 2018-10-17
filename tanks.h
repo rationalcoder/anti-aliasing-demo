@@ -95,13 +95,15 @@ game_allocate_copy_(umm size, u32 alignment, void* data)
 }
 
 #define allocate(size, alignment) game_allocate_(size, alignment)
+#define allocate_bytes(size) (char*)game_allocate_(size, 1)
 #define allocate_array(n, type) (type*)game_allocate_((n)*sizeof(type), alignof(type))
 #define allocate_array_zero(n, type) (type*)game_allocate_zero_((n)*sizeof(type), alignof(type))
 #define allocate_array_copy(n, type, data) (type*)game_allocate_copy_((n)*sizeof(type), alignof(type), data)
 #define allocate_type(type) ((type*)game_allocate_(sizeof(type), alignof(type)))
 #define allocate_new(type, ...) (new (game_allocate_(sizeof(type), alignof(type))) (type)(__VA_ARGS__))
 
-#define temp_allocate(n, alignment) push(*gGame->temp, n, alignment)
+#define temp_allocate(size, alignment) push(*gGame->temp, size, alignment)
+#define temp_allocate_bytes(size) (char*)push_bytes(*gGame->temp, size)
 #define temp_array(n, type) (type*)push(*gGame->temp, (n)*sizeof(type), alignof(type))
 #define temp_array_zero(n, type) (type*)push_zero(*gGame->temp, (n)*sizeof(type), alignof(type))
 #define temp_array_copy(n, type, data) (type*)push_copy(*gGame->temp, (n)*sizeof(type), alignof(type), data)

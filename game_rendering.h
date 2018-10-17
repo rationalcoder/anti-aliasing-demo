@@ -150,7 +150,7 @@ push_debug_cube(f32 halfWidth)
 // Render Commands
 
 inline void
-render_target(Push_Buffer& buffer)
+set_render_target(Push_Buffer& buffer)
 {
     gGame->targetRenderCommandBuffer = &buffer;
 }
@@ -177,7 +177,7 @@ push_render_command_(Render_Command_Type type, u32 size, u32 alignment)
 }
 
 inline void
-set_clear_color(f32 r, f32 g, f32 b, f32 a)
+cmd_set_clear_color(f32 r, f32 g, f32 b, f32 a)
 {
     Set_Clear_Color* clearColor = push_render_command(Set_Clear_Color);
     clearColor->r = r;
@@ -187,7 +187,7 @@ set_clear_color(f32 r, f32 g, f32 b, f32 a)
 }
 
 inline void
-set_viewport(Game_Resolution res)
+cmd_set_viewport(Game_Resolution res)
 {
     Set_Viewport* viewport = push_render_command(Set_Viewport);
     viewport->x = 0;
@@ -197,7 +197,7 @@ set_viewport(Game_Resolution res)
 }
 
 inline void
-set_viewport(u32 x, u32 y, u32 w, u32 h)
+cmd_set_viewport(u32 x, u32 y, u32 w, u32 h)
 {
     Set_Viewport* viewport = push_render_command(Set_Viewport);
     viewport->x = x;
@@ -207,27 +207,27 @@ set_viewport(u32 x, u32 y, u32 w, u32 h)
 }
 
 inline void
-set_view_matrix(const mat4& matrix)
+cmd_set_view_matrix(const mat4& matrix)
 {
     Set_View_Matrix* viewMatrix = push_render_command(Set_View_Matrix);
     memcpy(viewMatrix->mat4, &matrix, sizeof(matrix));
 }
 
 inline void
-set_projection_matrix(const mat4& matrix)
+cmd_set_projection_matrix(const mat4& matrix)
 {
     Set_Projection_Matrix* projMatrix = push_render_command(Set_Projection_Matrix);
     memcpy(projMatrix->mat4, &matrix, sizeof(matrix));
 }
 
 inline void
-begin_render_pass()
+cmd_begin_render_pass()
 {
     push_render_command(Begin_Render_Pass);
 }
 
 inline void
-render_debug_lines(v3* vertices, u32 vertexCount, v3 color)
+cmd_render_debug_lines(v3* vertices, u32 vertexCount, v3 color)
 {
     Render_Debug_Lines* debugLines = push_render_command(Render_Debug_Lines);
     debugLines->vertices    = (f32*)vertices;
@@ -239,7 +239,7 @@ render_debug_lines(v3* vertices, u32 vertexCount, v3 color)
 }
 
 inline void
-render_debug_cubes(view32<v3> centers, f32 halfWidth, v3 color)
+cmd_render_debug_cubes(view32<v3> centers, f32 halfWidth, v3 color)
 {
     v3* centersCopy = allocate_array_copy(centers.size, v3, centers.data);
 
@@ -254,9 +254,9 @@ render_debug_cubes(view32<v3> centers, f32 halfWidth, v3 color)
 }
 
 inline void
-render_debug_cube(v3 position, f32 halfWidth, v3 color)
+cmd_render_debug_cube(v3 position, f32 halfWidth, v3 color)
 {
-    render_debug_cubes(view_of(&position, 1), halfWidth, color);
+    cmd_render_debug_cubes(view_of(&position, 1), halfWidth, color);
 }
 
 inline void

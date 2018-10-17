@@ -39,19 +39,24 @@ tightest_supported_resolution(Game_Resolution candidate)
 }
 
 static inline OBJ_File
-parse_test_obj_file(const char* path)
+read_obj_file(const char* path)
 {
-    arena_scope(gMem->file);
     buffer32 buffer = read_file_buffer(path);
+
     return parse_obj_file(buffer);
+}
+
+static inline MTL_File
+read_mtl_file(buffer32 path)
+{
+    buffer32 buffer = read_file_buffer(path);
+
+    return parse_mtl_file(buffer);
 }
 
 static inline void
 setup_test_scene()
 {
-    gGame->frameCommands    = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Frame Game Render Commands");
-    gGame->residentCommands = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Resident Game Render Commands");
-
     gGame->camera.look_at(v3(0, 0, 5), v3(0, 1, 0));
     gGame->camera.fov = 75;
 
@@ -59,32 +64,35 @@ setup_test_scene()
         // TODO: add convenient allocation scopes, e.g. allocator_scope(arena) macro;
         gGame->allocator.data = &gMem->modelLoading;
 
-        OBJ_File bob  = parse_test_obj_file("demo/assets/boblampclean.obj");
-        OBJ_File heli = parse_test_obj_file("demo/assets/hheli.obj");
+        OBJ_File bob  = read_obj_file("demo/assets/boblampclean.obj");
+        OBJ_File heli = read_obj_file("demo/assets/hheli.obj");
+
+        MTL_File bobMaterial  = read_mtl_file(cat("demo/assets/", bob.mtllib));
+        MTL_File heliMaterial = read_mtl_file(cat("demo/assets/", heli.mtllib));
 
         gGame->allocator.data = &gMem->perm;
     }
 
     // TODO(blake): make these macros that clear the render target after queing commands.
-    render_target(gGame->frameCommands); {
-        set_clear_color(0.0f, 0.0f, .2f, 1.0f);
-        set_projection_matrix(glm::perspective(glm::radians(gGame->camera.fov), 16.0f/9.0f, .1f, 100.0f));
-        set_view_matrix(gGame->camera.view_matrix());
-        set_viewport(gGame->clientRes);
+    set_render_target(gGame->frameCommands); {
+        cmd_set_clear_color(0.0f, 0.0f, .2f, 1.0f);
+        cmd_set_projection_matrix(glm::perspective(glm::radians(gGame->camera.fov), 16.0f/9.0f, .1f, 100.0f));
+        cmd_set_view_matrix(gGame->camera.view_matrix());
+        cmd_set_viewport(gGame->clientRes);
     }
 
-    render_target(gGame->residentCommands); {
-        begin_render_pass();
+    set_render_target(gGame->residentCommands); {
+        cmd_begin_render_pass();
 
         v3 color { .1, .1, .1 };
 
         Grid grid = make_xy_grid(20, 20);
-        render_debug_lines(grid.vertices, grid.vertexCount, color);
+        cmd_render_debug_lines(grid.vertices, grid.vertexCount, color);
         // render_debug_cube(v3(-10.5f, 10.5f, 0.0f), .5f, color);
 
         v3 centers[20] = {};
         points_by_step(20, v3(-10.5f, 10.5f, 0.0f), v3(0, -1, 0), centers);
-        render_debug_cubes(view_of(centers), .5f, color);
+        cmd_render_debug_cubes(view_of(centers), .5f, color);
     }
 }
 
@@ -106,6 +114,9 @@ game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes)
 
     if (!renderer_init(&memory->perm, &gGame->rendererWorkspace))
         return false;
+
+    gGame->frameCommands    = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Frame Game Render Commands");
+    gGame->residentCommands = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Resident Game Render Commands");
 
     gGame->targetRenderCommandBuffer = &gGame->frameCommands;
 
@@ -179,8 +190,8 @@ game_resize(Game_Resolution clientRes)
     gGame->closestRes = closestResolution;
     gGame->clientRes  = clientRes;
 
-    render_target(gGame->frameCommands);
-    set_viewport(0, 0, clientRes.w, clientRes.h);
+    set_render_target(gGame->frameCommands);
+    cmd_set_viewport(0, 0, clientRes.w, clientRes.h);
 }
 
 extern void
@@ -192,9 +203,8 @@ extern void
 game_render(f32 /*frameRatio*/)
 {
     // Render frame local changes like resizes, viewport, etc.
-    render_target(gGame->frameCommands);
-
-    set_view_matrix(gGame->camera.view_matrix());
+    set_render_target(gGame->frameCommands);
+    cmd_set_view_matrix(gGame->camera.view_matrix());
 
     render_commands(gGame->frameCommands);
     render_commands(gGame->residentCommands);

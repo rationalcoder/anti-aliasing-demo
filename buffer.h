@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "primitives.h"
+#include "tanks.h"
 
 // NOTE(blake): until operator [] is force inlined, access in here will be buffer.data[i], since
 // having to step through an extra function like that in the debugger is stupid.
@@ -16,6 +17,8 @@ operator == (buffer32 buffer, char c) { return buffer.size == 1 && buffer.data[0
 inline b32
 operator == (buffer32 buffer, const char* str) 
 {
+    if (buffer.size == 0) return *str == '\0';
+
     for (u32 i = 0; i < buffer.size; i++) {
         u8 c = str[i];
         if (!c || c != buffer.data[i])
@@ -25,6 +28,78 @@ operator == (buffer32 buffer, const char* str)
     return true;
 }
 
+inline b32 operator != (buffer32 lhs, buffer32 rhs) { return !(lhs == rhs); }
+inline b32 operator != (buffer32 buffer, char c) { return !(buffer == c); }
+inline b32 operator != (buffer32 buffer, const char* str) { return !(buffer == str); }
+
+inline char*
+cstr(buffer32 b)
+{
+    char* bytes = temp_allocate_bytes(b.size + 1);
+    memcpy(bytes, b.data, b.size);
+
+    bytes[b.size] = '\0';
+    return bytes;
+}
+
+inline buffer32
+cat(buffer32 a, buffer32 b)
+{
+    buffer32 result(uninitialized);
+
+    u32 size = a.size + b.size;
+    result.data = (u8*)temp_allocate_bytes(size);
+    result.size = size;
+
+    memcpy(result.data, a.data, a.size);
+    memcpy(result.data + a.size, b.data, b.size);
+
+    return result;
+}
+
+inline buffer32
+cat(const char* a, buffer32 b)
+{
+    buffer32 result(uninitialized);
+
+    u32 aSize = (u32)strlen(a);
+    u32 size  = aSize + b.size;
+    result.data = (u8*)temp_allocate_bytes(size);
+    result.size = size;
+
+    memcpy(result.data, a, aSize);
+    memcpy(result.data + aSize, b.data, b.size);
+
+    return result;
+}
+
+inline buffer32
+dup(buffer32 b)
+{
+    buffer32 result(uninitialized);
+    result.data = (u8*)allocate_bytes(b.size);
+    result.size = b.size;
+
+    memcpy(result.data, b.data, b.size);
+    return result;
+}
+
+inline char*
+cstr_line(buffer32 b)
+{
+    for (u32 i = 0; i < b.size; i++) {
+        if (b.data[i] == '\n') {
+            u32 size = i + 1;
+            char* s = temp_allocate_bytes(size + 1);
+            memcpy(s, b.data, size);
+
+            s[size] = '\0';
+            return s;
+        }
+    }
+
+    return nullptr;
+}
 
 inline buffer32
 read_file_buffer(const char* file)
@@ -38,6 +113,9 @@ read_file_buffer(const char* file)
     result.size = down_cast<u32>(size);
     return result;
 }
+
+inline buffer32
+read_file_buffer(buffer32 file) { return read_file_buffer(cstr(file)); }
 
 inline buffer32
 next_line(buffer32 buffer)
@@ -180,5 +258,27 @@ next_word(buffer32 word, buffer32 buffer)
     return result;
 }
 
+// NOTE(blake): could use functions like these to speed up the obj parsing code even more
+// for larger files, but right now the current code is fast enough (basically instant) for bob
+// and the heli, so I think we're good. Maybe something like the Stanford Dragon would be problematic?
+#if 0
 
+inline s32
+read_known_s32(buffer32 b)
+{
+    s32 result = 0;
+    b32 isSigned = b.data[0] == '-';
+}
 
+inline f32
+read_known_f32(buffer32 b)
+{
+}
+
+inline v3
+read_known_v3(buffer32 b)
+{
+    v3 result(glm::uninitialize);
+}
+
+#endif
