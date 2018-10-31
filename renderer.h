@@ -90,7 +90,8 @@ struct Render_Textured_Quad
 struct Render_Static_Mesh
 {
     void* _staged;
-    Static_Mesh* mesh;
+    Static_Mesh mesh;
+    f32 modelMatrix[16];
 };
 
 struct Render_Point_Light

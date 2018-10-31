@@ -219,21 +219,34 @@ eat_spaces(buffer32 buffer)
 }
 
 inline buffer32
-first_word(buffer32 buffer)
+eat_spaces_and_tabs(buffer32 buffer)
 {
-    buffer32 result = buffer;
+    buffer32 result = {};
     for (u32 i = 0; i < buffer.size; i++) {
-        if (buffer.data[i] == ' ') {
-            result.size = i;
-            return result;
-        }
-        else if (buffer.data[i] == '\n') {
-            result.size = i;
+        u8 c = buffer.data[i];
+        if (c != ' ' && c != '\t') {
+            result.data = buffer.data + i;
+            result.size = buffer.size - i;
             return result;
         }
     }
 
     return result;
+}
+
+inline buffer32
+first_word(buffer32 buffer)
+{
+    buffer = eat_spaces_and_tabs(buffer);
+    for (u32 i = 0; i < buffer.size; i++) {
+        u8 c = buffer.data[i];
+        if (c == ' ' || c == '\n' || c == '\t') {
+            buffer.size = i;
+            return buffer;
+        }
+    }
+
+    return buffer;
 }
 
 inline buffer32
@@ -245,7 +258,7 @@ next_word(buffer32 word, buffer32 buffer)
 
     result.data = word.data + word.size;
     result.size = buffer.size;
-    result = eat_spaces(result);
+    result = eat_spaces_and_tabs(result);
 
     for (u32 i = 1; i < result.size; i++) {
         u8 c = result.data[i];

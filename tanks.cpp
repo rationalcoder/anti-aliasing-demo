@@ -60,22 +60,27 @@ setup_test_scene()
     gGame->camera.look_at(v3(0, 0, 5), v3(0, 1, 0));
     gGame->camera.fov = 75;
 
-    {
-        // TODO: add convenient allocation scopes, e.g. allocator_scope(arena) macro;
-        gGame->allocator.data = &gMem->modelLoading;
+    gGame->allocator.data = &gMem->modelLoading;
 
-        OBJ_File bob  = read_obj_file("demo/assets/boblampclean.obj");
-        OBJ_File heli = read_obj_file("demo/assets/hheli.obj");
+    stbi_set_flip_vertically_on_load(true);
 
-        MTL_File bobMaterial  = read_mtl_file(cat("demo/assets/", bob.mtllib));
-        MTL_File heliMaterial = read_mtl_file(cat("demo/assets/", heli.mtllib));
+    //OBJ_File bob  = read_obj_file("demo/assets/boblampclean.obj");
+    OBJ_File heli = read_obj_file("demo/assets/hheli.obj");
+    OBJ_File box = read_obj_file("demo/assets/box.obj");
 
-        gGame->allocator.data = &gMem->perm;
-    }
+    //MTL_File bobMtl  = read_mtl_file(cat("demo/assets/", bob.mtllib));
+    MTL_File heliMtl = read_mtl_file(cat("demo/assets/", heli.mtllib));
+    MTL_File boxMtl = read_mtl_file(cat("demo/assets/", box.mtllib));
+
+    //Static_Mesh bobMesh  = load_static_mesh(bob, bobMtl, "demo/assets/");
+    Static_Mesh heliMesh = load_static_mesh(heli, heliMtl, "demo/assets/");
+    Static_Mesh boxMesh = load_static_mesh(box, boxMtl, "demo/assets/");
+
+    gGame->allocator.data = &gMem->perm;
 
     // TODO(blake): make these macros that clear the render target after queing commands.
     set_render_target(gGame->frameCommands); {
-        cmd_set_clear_color(0.0f, 0.0f, .2f, 1.0f);
+        cmd_set_clear_color(0.015f, 0.015f, 0.015f, 1.0f);
         cmd_set_projection_matrix(glm::perspective(glm::radians(gGame->camera.fov), 16.0f/9.0f, .1f, 100.0f));
         cmd_set_view_matrix(gGame->camera.view_matrix());
         cmd_set_viewport(gGame->clientRes);
@@ -84,7 +89,14 @@ setup_test_scene()
     set_render_target(gGame->residentCommands); {
         cmd_begin_render_pass();
 
-        v3 color { .1, .1, .1 };
+        v3 lightPos(-5, 0, 2);
+        v3 lightColor(1, 1, 0);
+
+        cmd_render_point_light(lightPos, lightColor);
+        cmd_render_debug_cube(lightPos, .2f, lightColor);
+
+
+        v3 color { .07, .07, .07 };
 
         Grid grid = make_xy_grid(20, 20);
         cmd_render_debug_lines(grid.vertices, grid.vertexCount, color);
@@ -93,6 +105,15 @@ setup_test_scene()
         v3 centers[20] = {};
         points_by_step(20, v3(-10.5f, 10.5f, 0.0f), v3(0, -1, 0), centers);
         cmd_render_debug_cubes(view_of(centers), .5f, color);
+        //cmd_render_static_mesh(bobMesh, mat4(.5f));
+        cmd_render_static_mesh(boxMesh, mat4(mat3(.5f)));
+
+        mat4 xform;
+        xform = glm::rotate(xform, glm::pi<f32>()/2, v3(1, 0, 0));
+        xform = glm::scale(xform, v3(.02f));
+
+        //cmd_render_static_mesh(bobMesh, xform);
+        cmd_render_static_mesh(heliMesh, xform);
     }
 }
 
@@ -149,11 +170,26 @@ game_update(f32 dt)
     f32 camSpeed = 3*dt; // XXX
     Camera& camera = gGame->camera;
 
-    if (kb.down(GK_W)) camera.forward_by(camSpeed);
-    if (kb.down(GK_S)) camera.forward_by(-camSpeed);
-    if (kb.down(GK_A)) camera.right_by(-camSpeed);
-    if (kb.down(GK_D)) camera.right_by(camSpeed);
-    if (kb.down(GK_E)) camera.up_by(camSpeed);
+    f32 up      = 0;
+    f32 right   = 0;
+    f32 forward = 0;
+
+    if (kb.down(GK_W)) forward += camSpeed;
+    if (kb.down(GK_S)) forward -= camSpeed;
+    if (kb.down(GK_A)) right   -= camSpeed;
+    if (kb.down(GK_D)) right   += camSpeed;
+    if (kb.down(GK_E)) up      += camSpeed;
+
+    v3 movement(up, right, forward);
+
+    if (movement.x || movement.y || movement.z) {
+        movement = glm::normalize(v3(up, right, forward)) * camSpeed;
+
+        camera.up_by(movement.x);
+        camera.right_by(movement.y);
+        camera.forward_by(movement.z);
+    }
+
 
     Game_Mouse& mouse = gGame->input.mouse;
     Game_Mouse_State& curMouse = gGame->input.mouse.cur;
@@ -169,6 +205,7 @@ game_update(f32 dt)
         f32 yDrag = map_bilateral(curMouse.yDrag, gGame->clientRes.h);
 
         v2 smoothedDrag = smoother.smooth_mouse_drag(xDrag, yDrag);
+        //v2 smoothedDrag(xDrag, yDrag);
 
         camera.yaw_by(2 * -smoothedDrag.x);
         camera.pitch_by(2 * smoothedDrag.y);

@@ -2,6 +2,7 @@
 
 #include <glm/matrix.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 #include <GL/gl3w.h>
 
@@ -130,10 +131,12 @@ load_static_mesh_program(const Shader_Catalog& catalog, Static_Mesh_Program* pro
 
     GLuint id = program->id;
 
-    program->modelMatrix      = glGetUniformLocation(id, "u_modelMatrix");
-    program->viewMatrix       = glGetUniformLocation(id, "u_viewMatrix");
+    program->modelViewMatrix  = glGetUniformLocation(id, "u_modelViewMatrix");
     program->projectionMatrix = glGetUniformLocation(id, "u_projectionMatrix");
     program->normalMatrix     = glGetUniformLocation(id, "u_normalMatrix");
+
+    program->solid = glGetUniformLocation(id, "u_solid");
+    program->color = glGetUniformLocation(id, "u_color");
 
     program->diffuseMap  = glGetUniformLocation(id, "u_diffuse");
     program->normalMap   = glGetUniformLocation(id, "u_normal");
@@ -205,9 +208,8 @@ bind_debug_lines(Rolling_Cache& cache, Render_Debug_Lines* cmd)
 }
 
 static inline GLuint
-bind_debug_cubes(GLuint vbo, GLuint ebo, Rolling_Cache& cache, Render_Debug_Cubes* cmd)
+bind_debug_cubes(GLuint vbo, GLuint ebo, Rolling_Cache&, Render_Debug_Cubes* cmd)
 {
-    ((void)cache);
     if (cmd->_staged) {
         GLuint vao = (GLuint)(umm)cmd->_staged;
         glBindVertexArray(vao);
@@ -242,11 +244,183 @@ bind_debug_cubes(GLuint vbo, GLuint ebo, Rolling_Cache& cache, Render_Debug_Cube
     return newVao;
 }
 
-static inline GLuint
-bind_static_mesh(Rolling_Cache&, Render_Debug_Lines* cmd)
+static inline GLenum
+to_gl_index_type(Index_Size size)
 {
-    if (cmd->_staged) return *((GLuint*)cmd->_staged);
-    return GL_INVALID_VALUE;
+    switch (size) {
+    case IndexSize_u8:  return GL_UNSIGNED_BYTE;
+    case IndexSize_u16: return GL_UNSIGNED_SHORT;
+    case IndexSize_u32: return GL_UNSIGNED_INT;
+    }
+
+    return GL_INVALID_ENUM;
+}
+
+struct GL_Format
+{
+    GLenum upload   = GL_INVALID_ENUM;
+    GLenum internal = GL_INVALID_ENUM;
+};
+
+// TODO(blake): handle more than 8 bits ber channel.
+static inline GL_Format
+to_gl_format(Texture_Format format, b32 srgb)
+{
+    GL_Format result;
+
+    if (srgb) {
+        switch (format) {
+        case TextureFormat_Grey:
+            result.upload   = GL_RED;
+            result.internal = GL_R8;
+            break;
+        case TextureFormat_GreyAlpha:
+            result.upload   = GL_RG;
+            result.internal = GL_RG8;
+            break;
+        case TextureFormat_RGB:
+            result.upload   = GL_RGB;
+            result.internal = GL_SRGB8;
+            break;
+        case TextureFormat_RGBA:
+            result.upload   = GL_RGBA;
+            result.internal = GL_SRGB8_ALPHA8;
+            break;
+        }
+    }
+    else {
+        switch (format) {
+        case TextureFormat_Grey:
+            result.upload   = GL_RED;
+            result.internal = GL_R8;
+            break;
+        case TextureFormat_GreyAlpha:
+            result.upload   = GL_RG;
+            result.internal = GL_RG8;
+            break;
+        case TextureFormat_RGB:
+            result.upload   = GL_RGB;
+            result.internal = GL_SRGB8;
+            break;
+        case TextureFormat_RGBA:
+            result.upload   = GL_RGBA;
+            result.internal = GL_SRGB8_ALPHA8;
+            break;
+        }
+    }
+
+    return result;
+}
+
+static inline GLuint
+stage_texture(Texture texture, b32 srgb, b32 mipmaps, GLenum wrapType)
+{
+    GLuint handle = GL_INVALID_VALUE;
+    glGenTextures(1, &handle);
+
+    glBindTexture(GL_TEXTURE_2D, handle);
+
+    GL_Format format = to_gl_format(texture.format, srgb);
+    glTexImage2D(GL_TEXTURE_2D, 0, format.internal, texture.x, texture.y, 0, format.upload, GL_UNSIGNED_BYTE, texture.data);
+
+    GLuint minFilter = GL_LINEAR;
+    if (mipmaps) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+        minFilter = GL_NEAREST_MIPMAP_LINEAR;
+    }
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapType);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapType);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    return handle;
+}
+
+static inline Staged_Static_Mesh*
+stage_static_mesh(Rolling_Cache&, Render_Static_Mesh* cmd)
+{
+    if (cmd->_staged) return (Staged_Static_Mesh*)cmd->_staged;
+
+    Static_Mesh& mesh = cmd->mesh;
+
+    GLuint vao = GL_INVALID_VALUE;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    GLuint vertices = GL_INVALID_VALUE;
+    glGenBuffers(1, &vertices);
+
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, vertices);
+    glBufferData(GL_ARRAY_BUFFER, mesh.vertexCount * 3 * sizeof(f32), mesh.vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+    GLuint uvs = GL_INVALID_VALUE;
+    glGenBuffers(1, &uvs);
+
+    glEnableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, uvs);
+    glBufferData(GL_ARRAY_BUFFER, mesh.vertexCount * 2 * sizeof(f32), mesh.uvs, GL_STATIC_DRAW);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+    if (mesh.has_normals()) {
+        GLuint normals = GL_INVALID_VALUE;
+        glGenBuffers(1, &normals);
+
+        glEnableVertexAttribArray(2);
+        glBindBuffer(GL_ARRAY_BUFFER, normals);
+        glBufferData(GL_ARRAY_BUFFER, mesh.vertexCount * 3 * sizeof(f32), mesh.normals, GL_STATIC_DRAW);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    }
+
+    // TODO: tangents
+
+    GLuint ebo = GL_INVALID_VALUE;
+    glGenBuffers(1, &ebo);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.indexCount * mesh.indexSize, mesh.indices, GL_STATIC_DRAW);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    // Textures
+
+    u32 groupCount = mesh.material->coloredGroupCount;
+
+    Staged_Static_Mesh* stagedMesh = allocate_new(Staged_Static_Mesh);
+    stagedMesh->vao        = vao;
+    stagedMesh->groups     = allocate_array(groupCount, Staged_Colored_Index_Group);
+    stagedMesh->groupCount = groupCount;
+
+    for (u32 i = 0; i < mesh.material->coloredGroupCount; i++) {
+        Colored_Index_Group&        group       = mesh.material->coloredIndexGroups[i];
+        Staged_Colored_Index_Group& stagedGroup = stagedMesh->groups[i];
+
+        stagedGroup.indexStart = group.start;
+        stagedGroup.indexCount = group.count;
+        stagedGroup.indexType  = to_gl_index_type(mesh.indexSize);
+
+        if (!group.has_diffuse_map()) {
+            stagedGroup.color       = group.color;
+            stagedGroup.specularExp = group.specularExp;
+            continue;
+        }
+
+        stagedGroup.diffuseMap  = stage_texture(group.diffuseMap,  true, true, GL_REPEAT);
+        stagedGroup.normalMap   = stage_texture(group.normalMap,   true, true, GL_NEAREST);
+        stagedGroup.specularMap = stage_texture(group.specularMap, true, true, GL_NEAREST);
+        stagedGroup.emissiveMap = stage_texture(group.emissiveMap, true, true, GL_REPEAT);
+        stagedGroup.specularExp = group.specularExp;
+    }
+
+    cmd->_staged = stagedMesh;
+
+    return stagedMesh;
 }
 
 static inline b32
@@ -297,6 +471,13 @@ renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
 
     if (!load_debug_cube_buffers(&renderer->debugCubeVertexBuffer, &renderer->debugCubeIndexBuffer)) return false;
 
+    glEnable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_FRAMEBUFFER_SRGB);
+    glEnable(GL_CULL_FACE);
+
+    glCullFace(GL_BACK);
+
     return true;
 }
 
@@ -305,6 +486,10 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
     (void)renderer;
+
+    renderer->pointLight = nullptr;
+
+    allocator_scope(workspace);
 
     Render_Command_Header* header = (Render_Command_Header*)commands;
     for (u32 i = 0; i < count; i++, header = next_header(header, header->size)) {
@@ -347,6 +532,7 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
             glDrawArrays(GL_LINES, 0, cmd->vertexCount);
             glBindVertexArray(0);
             glUseProgram(0);
+
             break;
         }
         case RenderCommand_Render_Debug_Cubes: {
@@ -373,10 +559,68 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
             break;
         }
         case RenderCommand_Render_Static_Mesh: {
-            glUseProgram(renderer->staticMeshProgram.id);
+            Render_Static_Mesh* cmd = render_command_after<Render_Static_Mesh>(header);
+
+            Static_Mesh_Program& program = renderer->staticMeshProgram;
+            glUseProgram(program.id);
+
+            mat4 modelView = renderer->viewMatrix * *(mat4*)&cmd->modelMatrix;
+            glUniformMatrix4fv(program.modelViewMatrix,  1, GL_FALSE, glm::value_ptr(modelView));
+            glUniformMatrix4fv(program.projectionMatrix, 1, GL_FALSE, glm::value_ptr(renderer->projectionMatrix));
+
+            glm::mat3 normalMatrix = mat3(glm::inverseTranspose(modelView));
+            glUniformMatrix3fv(program.normalMatrix, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+
+            glUniform1i(program.diffuseMap,  0);
+            glUniform1i(program.normalMap,   1);
+            glUniform1i(program.specularMap, 2);
+
+            if (renderer->pointLight) {
+                const Render_Point_Light& light = *renderer->pointLight;
+
+                v3 cSpaceLightPos = v3(renderer->viewMatrix * v4(light.x, light.y, light.z, 1));
+                glUniform1i(program.lit, 1);
+                glUniform3fv(program.lightPos, 1, glm::value_ptr(cSpaceLightPos));
+                glUniform4f(program.lightColor, light.r, light.g, light.b, 1);
+            }
+            else {
+                glUniform1i(program.lit, 0);
+            }
+
+            Staged_Static_Mesh* stagedMesh = stage_static_mesh(renderer->staticMeshCache, cmd);
+            glBindVertexArray(stagedMesh->vao);
+
+            for (u32 i = 0; i < stagedMesh->groupCount; i++) {
+                Staged_Colored_Index_Group& group = stagedMesh->groups[i];
+
+                glUniform1f(program.specularExp, group.specularExp);
+
+                if (group.diffuseMap == GL_INVALID_VALUE) {
+                    glUniform1i(program.solid, 1);
+                    glUniform3fv(program.color, 1, glm::value_ptr(group.color));
+                }
+                else {
+                    glUniform1i(program.solid, 0);
+                    glUniform1i(program.diffuseMap, 0);
+
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, group.diffuseMap);
+                }
+
+                // TODO: other maps.
+
+                glDrawElements(GL_TRIANGLES, group.indexCount, group.indexType, (void*)(umm)group.indexStart);
+            }
+
+            glUseProgram(0);
+            glBindVertexArray(0);
+
             break;
         }
         case RenderCommand_Render_Point_Light: {
+            Render_Point_Light* cmd = render_command_after<Render_Point_Light>(header);
+            renderer->pointLight = cmd;
+
             break;
         }
         default:

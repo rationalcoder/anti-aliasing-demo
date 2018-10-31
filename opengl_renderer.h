@@ -5,7 +5,9 @@
 #include "common.h"
 #include "memory.h"
 #include "mesh.h"
+#include "containers.h"
 
+#if 0
 struct Staged_Static_Mesh
 {
     GLuint vertexBuffer = GL_INVALID_VALUE;
@@ -28,44 +30,70 @@ struct Staged_Static_Mesh
     b32 has_normal_map()   const { return normalMap   != GL_INVALID_VALUE; }
     b32 has_specular_map() const { return specularMap != GL_INVALID_VALUE; }
 };
+#endif
+
+struct Staged_Colored_Index_Group
+{
+    GLuint diffuseMap  = GL_INVALID_VALUE;
+    GLuint normalMap   = GL_INVALID_VALUE;
+    GLuint specularMap = GL_INVALID_VALUE;
+    GLuint emissiveMap = GL_INVALID_VALUE;
+
+    v3 color;
+    f32 specularExp = 0;
+
+    u32 indexStart = 0;
+    u32 indexCount = 0;
+    GLenum indexType = GL_INVALID_ENUM;
+};
+
+struct Staged_Static_Mesh
+{
+    GLuint vao = GL_INVALID_VALUE;
+
+    Staged_Colored_Index_Group* groups = nullptr;
+    u32 groupCount = 0;
+};
 
 struct Static_Mesh_Program
 {
     GLuint id;
 
-    GLuint modelMatrix;
-    GLuint viewMatrix;
-    GLuint projectionMatrix;
-    GLuint normalMatrix;
+    GLint modelViewMatrix;
+    GLint projectionMatrix;
+    GLint normalMatrix;
 
-    GLuint diffuseMap;
-    GLuint normalMap;
-    GLuint specularMap;
+    GLint solid;
+    GLint color;
 
-    GLuint hasNormalMap;
-    GLuint hasSpecularMap;
-    GLuint specularExp;
+    GLint diffuseMap;
+    GLint normalMap;
+    GLint specularMap;
 
-    GLuint lit;
-    GLuint lightPos;
-    GLuint lightColor;
+    GLint hasNormalMap;
+    GLint hasSpecularMap;
+    GLint specularExp;
+
+    GLint lit;
+    GLint lightPos;
+    GLint lightColor;
 };
 
 struct Lines_Program
 {
     GLuint id;
 
-    GLuint mvp;
-    GLuint color;
+    GLint mvp;
+    GLint color;
 };
 
 struct Cubes_Program
 {
     GLuint id;
 
-    GLuint viewProjection;
-    GLuint centers;
-    GLuint color;
+    GLint viewProjection;
+    GLint centers;
+    GLint color;
 };
 
 struct Textured_Quad_Program
@@ -76,14 +104,15 @@ struct Textured_Quad_Program
 struct FXAA_Program
 {
     GLuint program;
-    GLuint texelStep;
-    GLuint showEdges;
-    GLuint on;
-    GLuint lumaThreshold;
-    GLuint mulReduce;
-    GLuint minReduce;
-    GLuint maxSpan;
-    GLuint tex;
+
+    GLint texelStep;
+    GLint showEdges;
+    GLint on;
+    GLint lumaThreshold;
+    GLint mulReduce;
+    GLint minReduce;
+    GLint maxSpan;
+    GLint tex;
 };
 
 struct Shader_Catalog
@@ -180,6 +209,9 @@ struct OpenGL_Renderer
     Rolling_Cache debugCubesCache;
     Rolling_Cache staticMeshCache;
 
-    glm::mat4 viewMatrix = glm::mat4(1);
-    glm::mat4 projectionMatrix = glm::mat4(1);
+    mat4 viewMatrix = mat4(1);
+    mat4 projectionMatrix = mat4(1);
+
+    // TODO(blake): more lights!
+    struct Render_Point_Light* pointLight;
 };

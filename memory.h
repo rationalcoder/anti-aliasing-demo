@@ -228,125 +228,22 @@ struct Push_Buffer_Scope
 #define push_buffer_scope_impl(buffer, counter) Push_Buffer_Scope _pushBufferScope##counter{&buffer}
 #define push_buffer_scope(buffer) push_buffer_scope_impl(buffer, __COUNTER__);
 
-#define temp_scope() defer(reset(gMem->temp);)
+using Allocate_Func = void* (void* data, umm size, u32 alignment);
+
+struct Allocator
+{
+    Allocate_Func* func = nullptr;
+    void*          data = nullptr;
+
+    Allocator() = default;
+    Allocator(Allocate_Func* func, void* data) : func(func), data(data) {}
+};
+
+inline void*
+arena_allocate(void* arena, umm size, u32 alignment)
+{ return push(*(Memory_Arena*)(arena), size, alignment); }
 
 // Extended Types
 
 // Simple, tiny list stuff for API boundaries
 #define list_push(list, p) (((p)->next = (list)), p)
-
-
-#if 0 // @Incomplete
-
-template <typename T_, u32 Size_>
-struct Bucket
-{
-    T_ data[Size_];
-    Bucket<T_, Size_>* next;
-
-    Bucket(ctor) {}
-    Bucket(Bucket<T_, Size_>* next) : next(next) {}
-};
-
-// TODO(blake): more generic btree (Bucket_Tree, since that is a better name for it).
-
-struct Bucket_Array_Node
-{
-    Bucket_Array_Node* left;
-    Bucket_Array_Node* right;
-    void* bucket;
-    u32   bucketIndex;
-};
-
-struct Hoisted_Bucket_Array
-{
-    Memory_Arena*      _arena;
-    Bucket_Array_Node* _tree;
-
-    // NOTE(blake): special root function for easier invariants during insert.
-    void allocate_root(void* bucket, u32 index);
-    void insert_bucket(void* bucket, u32 index);
-};
-
-inline void
-Hoisted_Bucket_Array::allocate_root(void* bucket, u32 index)
-{
-    _tree = push_type(*_arena, Bucket_Array_Node);
-    _tree->;
-}
-
-inline void
-Hoisted_Bucket_Array::insert_bucket(void* bucket, u32 index)
-{
-}
-
-template <typename T_, u32 BucketSize_>
-struct Bucket_Array : Hoisted_Bucket_Array
-{
-    using Bucket_Type = Bucket<T_, BucketSize_>;
-
-    Bucket_Type* _head;
-    Bucket_Type* _cur;
-    T_*          _at;
-    u32          _bucketCount;
-
-    Bucket_Array(Memory_Arena& arena);
-    Bucket_Array(ctor) {}
-
-    void create_reserve(Memory_Arena& arena, u32 bucketCount);
-    void add(T_ val);
-};
-
-template <typename T_, u32 BucketSize_> inline
-Bucket_Array<T_, BucketSize_>::Bucket_Array(Memory_Arena* arena)
-    : _arena(arena), _bucketCount(1)
-{
-    _head = push_type(*arena, Bucket_Type);
-    _head->next = nullptr;
-
-    _cur = _head;
-    _at  = &_head->data[0];
-}
-
-template <typename T_, u32 BucketSize_> inline void
-Bucket_Array<T_, BucketSize_>::create_reserve(Memory_Arena* arena, u32 bucketCount)
-{
-    _head = push_type(*arena, Bucket_Type);
-    _cur  = _head;
-    _at   = (T_*)_head->data;
-    allocate_root(_head, 0);
-
-    for (u32 i = 1; i < bucketCount; i++) {
-        Bucket_Type* newBucket = push_type(*arena, Bucket_Type);
-        _cur->next = newBucket;
-        _cur       = newBucket;
-        insert_bucket(newBucket, i);
-    }
-
-    _cur->next = nullptr;
-    _at        = &_cur->data[0];
-
-    _bucketCount = bucketCount;
-}
-
-template <typename T_, u32 BucketSize_> inline void
-Bucket_Array<T_, BucketSize_>::add(T_ val)
-{
-    if (_at < _cur->end()) {
-        *_at++ = val;
-        return;
-    }
-
-    Bucket_Type* next = push_type(*_arena, Bucket_Type);
-    _cur->next = next;
-    _cur       = next;
-    next->next = nullptr;
-
-    T_* nextAt = &next->data[0];
-    *nextAt    = val;
-    _at        = nextAt;
-
-    insert_bucket(next, _bucketCount++);
-}
-
-#endif

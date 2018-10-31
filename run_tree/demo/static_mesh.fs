@@ -13,6 +13,8 @@ uniform float u_specularExp;
 uniform bool u_hasNormalMap;
 uniform bool u_hasSpecularMap;
 uniform bool u_lit;
+uniform bool u_solid;
+uniform vec4 u_color;
 
 uniform sampler2D u_diffuse;
 uniform sampler2D u_normal;
@@ -22,10 +24,11 @@ void main()
 {
     if (u_lit) {
         vec4 diffuse = texture(u_diffuse, v_uv);
-        vec3 ambient = .1 * diffuse.rgb;
+        vec3 ambient = .01 * diffuse.rgb;
         //vec3 ambient = vec3(.01, .01, .01);
 
-        vec3 n = u_hasNormalMap ? texture(u_normal, v_uv).xyz : normalize(v_normal);
+        // TODO: normal mapping support
+        vec3 n = normalize(v_normal);
         vec3 l = normalize(v_lightDir);
         vec3 e = normalize(v_eye);
         vec3 h = normalize(l + e);
@@ -38,10 +41,10 @@ void main()
 
         float d  = v_lightDist;
         float d2 = d * d;
-        float attenuation = 1.0; //1.0 / (1.0 + .02*d);
+        float attenuation =  1.0 / (1.0 + .02*d + .1*d2);
         gl_FragColor = vec4(max(ambient, attenuation * (diffuseComponent + specularComponent)), diffuse.a);
     }
     else {
-        gl_FragColor = texture(u_diffuse, v_uv);
+        gl_FragColor = u_solid ? u_color : texture(u_diffuse, v_uv);
     }
 }

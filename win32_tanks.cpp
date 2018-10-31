@@ -721,7 +721,7 @@ win32_init(Win32_State* state, Platform* platformOut, Game_Memory* memoryOut,
 static void
 win32_shutdown(Win32_State* state, Game_Memory*)
 {
-    // @leak game_memory b/c it will get cleaned up just fine on exit.
+    // @Leak game_memory b/c it will get cleaned up just fine on exit.
     win32_close_opengl_window(state);
 }
 

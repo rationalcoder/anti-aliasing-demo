@@ -26,7 +26,8 @@ HEADERS += tanks.h \
     game_rendering.h \
     buffer.h \
     obj_file.h \
-    obj_file.cpp
+    obj_file.cpp \
+    containers.h
 
 SOURCES += win32_tanks.cpp \
 

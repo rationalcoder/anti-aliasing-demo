@@ -12,8 +12,9 @@
 #define Megabytes(x) (x * (1ULL << 20))
 #define Kilobytes(x) (x * (1ULL << 10))
 
-#define InvalidCodePath() assert(!"Invalid code path.");
-#define NotImplemented() assert(!"Not Implemented.");
+#define InvalidCodePath() assert(!"Invalid code path.")
+#define NotImplemented() assert(!"Not Implemented.")
+#define StaticNotImplemented() static_assert(false, "Not Implemented.")
 #define ArraySize(arr) (sizeof(arr)/sizeof((arr)[0]))
 
 #define FieldCount(type, field) (offsetof(type, field)/sizeof(field))

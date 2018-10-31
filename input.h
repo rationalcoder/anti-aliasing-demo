@@ -240,8 +240,8 @@ Game_Keyboard::down_exactly(Game_Key key, Game_Keymod mod) const
 
 struct Input_Smoother
 {
-    f32 mouseDragXValues[3] = {};
-    f32 mouseDragYValues[3] = {};
+    f32 mouseDragXValues[2] = {};
+    f32 mouseDragYValues[2] = {};
     f32_window mouseDragYWindow;
     f32_window mouseDragXWindow;
 

@@ -35,17 +35,6 @@ struct Game_State
     Game_State* (*update)(void*) = nullptr;
 };
 
-using allocate_func = void* (void* data, umm size, u32 alignment);
-
-inline void*
-arena_allocate(void* arena, umm size, u32 alignment)
-{ return push(*(Memory_Arena*)(arena), size, alignment); }
-
-struct Allocator
-{
-    allocate_func* func;
-    void*          data;
-};
 
 struct Game
 {
@@ -71,6 +60,7 @@ struct Game
 
     b32 shouldQuit = false;
 };
+
 
 inline void*
 game_allocate_(umm size, u32 alignment) 
@@ -109,6 +99,32 @@ game_allocate_copy_(umm size, u32 alignment, void* data)
 #define temp_array_copy(n, type, data) (type*)push_copy(*gGame->temp, (n)*sizeof(type), alignof(type), data)
 #define temp_type(type) ((type*)push(*gGame->temp, sizeof(type), alignof(type)))
 #define temp_new(type, ...) (new (push(*gGame->temp, sizeof(type), alignof(type))) (type)(__VA_ARGS__))
+
+struct Allocator_Scope
+{
+    Allocator saved;
+    Allocator temp;
+    b32 moved = false; // support null allocator just in case.
+
+    Allocator_Scope(Allocator temp) : saved(gGame->allocator), temp(temp) { gGame->allocator = temp; }
+    Allocator_Scope(Allocator_Scope&& scope) : saved(scope.saved), temp(scope.temp) { scope.moved = true; }
+
+    ~Allocator_Scope() { if (!moved) gGame->allocator = saved; }
+};
+
+inline Allocator_Scope
+make_allocator_scope(Allocate_Func* func, void* data) { return Allocator_Scope(Allocator(func, data)); }
+
+inline Allocator_Scope
+make_allocator_scope(Memory_Arena& arena) { return Allocator_Scope(Allocator(&arena_allocate, &arena)); }
+
+inline Allocator_Scope
+make_allocator_scope(Memory_Arena* arena) { return Allocator_Scope(Allocator(&arena_allocate, arena)); }
+
+#define allocator_scope_impl(counter, ...) Allocator_Scope allocatorScope##counter = make_allocator_scope(__VA_ARGS__)
+#define allocator_scope(...) allocator_scope_impl(__COUNTER__, __VA_ARGS__)
+
+#define temp_scope() defer(reset(gMem->temp);)
 
 
 struct Game_Memory

@@ -1,8 +1,12 @@
 #pragma once
 
+#include "stb_image.h"
+
 #include "primitives.h"
 #include "tanks.h"
 #include "renderer.h"
+#include "obj_file.h"
+#include "buffer.h"
 
 // Utility
 
@@ -147,6 +151,112 @@ push_debug_cube(f32 halfWidth)
     return mesh;
 }
 
+static inline MTL_Material*
+find_material(const MTL_File& mtl, buffer32 name)
+{
+    for (u32 i = 0; i < mtl.materialCount; i++) {
+        if (mtl.materials[i].name == name)
+            return mtl.materials + i;
+    }
+
+    return nullptr;
+}
+
+static inline Texture
+load_texture(buffer32 path)
+{
+    arena_scope(gMem->file);
+
+    Texture result;
+
+    buffer32 fileData = read_file_buffer(path);
+
+    int x = 0;
+    int y = 0;
+    int channels = 0;
+
+    result.data = stbi_load_from_memory(fileData.data, fileData.size, &x, &y, &channels, 0);
+    result.format = (Texture_Format)(channels-1);
+    result.x = x;
+    result.y = y;
+
+    if (!result.data)
+        log_debug("Error: %s\n", stbi_failure_reason());
+
+    return result;
+}
+
+inline Static_Mesh
+load_static_mesh(const OBJ_File& obj, const MTL_File& mtl, const char* texturePath)
+{
+    Static_Mesh result;
+
+    result.vertices = (f32*)obj.vertices;
+    result.normals  = (f32*)obj.normals;
+    result.uvs      = (f32*)obj.uvs;
+    result.indices  = obj.indices;
+
+    result.vertexCount = obj.vertexCount;
+    result.indexCount  = obj.indexCount;
+    result.indexSize   = (Index_Size)obj.indexSize;
+
+    if (!obj.groupCount || !mtl.materialCount)
+        return result;
+
+    Material* material = allocate_new(Material);
+
+    material->coloredGroupCount  = obj.groupCount;
+    material->coloredIndexGroups = allocate_array(obj.groupCount, Colored_Index_Group);
+
+    for (u32 i = 0; i < obj.groupCount; i++) {
+        OBJ_Material_Group& group = obj.groups[i];
+
+        MTL_Material* mtlMat = find_material(mtl, group.material);
+
+        auto& cg = material->coloredIndexGroups[i];
+        cg.start = group.startingIndex;
+
+        // There might be a diffuse map, or there might just be a solid color. Handle both cases.
+        // NOTE(blake): If there is no diffuse map, we assume there are no other maps.
+
+        if (!mtlMat->diffuseMap) {
+            cg.color       = mtlMat->diffuseColor;
+            cg.specularExp = mtlMat->specularExponent;
+            // NOTE(blake): need to fill out the `count` fields in a separate pass.
+            continue;
+        }
+
+        cg.diffuseMap  = load_texture(cat(texturePath, mtlMat->diffuseMap));
+        cg.specularExp = mtlMat->specularExponent;
+
+        if (mtlMat->normalMap)   cg.normalMap   = load_texture(cat(texturePath, mtlMat->normalMap));
+        if (mtlMat->emissiveMap) cg.emissiveMap = load_texture(cat(texturePath, mtlMat->emissiveMap));
+        if (mtlMat->specularMap) cg.specularMap = load_texture(cat(texturePath, mtlMat->specularMap));
+    }
+
+    // NOTE(blake): we have to calculate the number of indices in each group b/c the only information
+    // in each OBJ group is the starting index.
+
+    u32 totalIndexCount = 0;
+
+    for (u32 i = 0; i < material->coloredGroupCount-1; i++) {
+        Colored_Index_Group& groupCur  = material->coloredIndexGroups[i];
+        Colored_Index_Group& groupNext = material->coloredIndexGroups[i+1];
+
+        groupCur.count = groupNext.start - groupCur.start;
+        totalIndexCount += groupCur.count;
+    }
+
+    Colored_Index_Group& lastGroup = material->coloredIndexGroups[material->coloredGroupCount-1];
+    lastGroup.count = obj.indexCount - lastGroup.start;
+
+    totalIndexCount += lastGroup.count;
+    assert(totalIndexCount == obj.indexCount);
+
+    result.material = material;
+    return result;
+}
+
 // Render Commands
 
 inline void
@@ -257,6 +367,27 @@ inline void
 cmd_render_debug_cube(v3 position, f32 halfWidth, v3 color)
 {
     cmd_render_debug_cubes(view_of(&position, 1), halfWidth, color);
+}
+
+inline void
+cmd_render_static_mesh(const Static_Mesh& mesh, const mat4& modelMatrix)
+{
+    Render_Static_Mesh* staticMesh = push_render_command(Render_Static_Mesh);
+
+    staticMesh->mesh = mesh;
+    *(mat4*)&staticMesh->modelMatrix = modelMatrix;
+}
+
+inline void
+cmd_render_point_light(v3 position, v3 color)
+{
+    Render_Point_Light* pointLight = push_render_command(Render_Point_Light);
+    pointLight->x = position.x;
+    pointLight->y = position.y;
+    pointLight->z = position.z;
+    pointLight->r = color.r;
+    pointLight->g = color.g;
+    pointLight->b = color.b;
 }
 
 inline void

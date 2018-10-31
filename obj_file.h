@@ -2,7 +2,7 @@
 #include "common.h"
 #include "memory.h"
 
-struct OBJ_Textured_Group
+struct OBJ_Material_Group
 {
     buffer32 material;
     u32 startingIndex;
@@ -13,7 +13,7 @@ struct OBJ_File
     const char* error;
     buffer32 mtllib;
 
-    OBJ_Textured_Group* groups;
+    OBJ_Material_Group* groups;
 
     v3* vertices;
     v3* normals;
