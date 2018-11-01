@@ -55,8 +55,16 @@ struct MTL_File
     u32 materialCount;
 };
 
+enum Post_Process_Flags : u32
+{
+    PostProcess_None        = 0x0,
+    PostProcess_GenNormals  = 0x1,
+    PostProcess_GenTangents = PostProcess_GenNormals | 0x2,
+};
+
 extern OBJ_File
-parse_obj_file(buffer32 buffer);
+parse_obj_file(buffer32 buffer, u32 processFlags = 0);
 
 extern MTL_File
 parse_mtl_file(buffer32 buffer);
+

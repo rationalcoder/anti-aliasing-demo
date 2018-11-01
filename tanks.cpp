@@ -43,7 +43,7 @@ read_obj_file(const char* path)
 {
     buffer32 buffer = read_file_buffer(path);
 
-    return parse_obj_file(buffer);
+    return parse_obj_file(buffer, PostProcess_GenNormals);
 }
 
 static inline MTL_File

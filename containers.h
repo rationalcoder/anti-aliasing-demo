@@ -93,10 +93,14 @@ struct Bucket_List
 #endif
 
     T_* add_default() noexcept;
+    T_* add_forget() noexcept;
     T_* add(T_& val) noexcept;
     T_* add(T_&& val) noexcept;
 
     u32 size() const noexcept { return _size; }
+
+    const T_& back() const noexcept { return (_next-1); }
+    T_&       back()       noexcept { return (_next-1); }
 
     Const_Iterator begin() const noexcept
     { return size() == 0 ? Iterator(nullptr, nullptr) : Iterator(_head, (T_*)_head); }
@@ -139,6 +143,21 @@ Bucket_List<T_, BucketSize_>::add_default() noexcept
     _next       = newTail->array() + 1;
 
     return new (newTail->array()) T_;
+}
+
+template <typename T_, u32 BucketSize_> inline T_*
+Bucket_List<T_, BucketSize_>::add_forget() noexcept
+{
+    _size++;
+    if (_next != _tail->end())
+        return _next++;
+
+    Bucket_Type* newTail = push_type(*_arena, Bucket_Type);
+    _tail->next = newTail;
+    _tail       = newTail;
+    _next       = newTail->array() + 1;
+
+    return newTail->array();
 }
 
 template <typename T_, u32 BucketSize_> inline T_*

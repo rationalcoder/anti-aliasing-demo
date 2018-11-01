@@ -68,17 +68,16 @@ hash_index(u32 v, u32 vt, u32 vn)
     return v;
 }
 
-inline u32*
+inline OBJ_Index_Bucket*
 find_index(Index_Map& map, u32 v, u32 vt, u32 vn)
 {
     OBJ_Index_Bucket*& bucket = map.buckets[hash_index(v, vt, vn)];
 
-    for (OBJ_Index_Bucket* b = bucket; b; b = b->next) {
-        if (v == b->v && vt == b->vt && vn == b->vn) {
-            log_debug("Reusing something\n");
-            return &b->final;
-        }
-    }
+    //for (OBJ_Index_Bucket* b = bucket; b; b = b->next) {
+    //    if (v == b->v && vt == b->vt && vn == b->vn) {
+    //        return b;
+    //    }
+    //}
 
     OBJ_Index_Bucket* newBucket = temp_type(OBJ_Index_Bucket);
     newBucket->v     = v;
@@ -88,12 +87,12 @@ find_index(Index_Map& map, u32 v, u32 vt, u32 vn)
 
     bucket = list_push(bucket, newBucket);
 
-    return &newBucket->final;
+    return newBucket;
 }
 
 
 extern OBJ_File
-parse_obj_file(buffer32 buffer)
+parse_obj_file(buffer32 buffer, u32 processFlags)
 {
     temp_scope();
 
@@ -217,6 +216,33 @@ parse_obj_file(buffer32 buffer)
         groups[i] = group->group;
 
 
+    // Generate normals.
+    if (!normalCount && processFlags & PostProcess_GenNormals) {
+        Bucket_List<v3, 128> tempNormalCatalog(gMem->temp);
+
+        for (u32 i = 0; i < faceCount; i++) {
+            OBJ_Face& f = faceCatalog[i];
+
+            v3 ab = vertexCatalog[f.v1] - vertexCatalog[f.v0];
+            v3 ac = vertexCatalog[f.v2] - vertexCatalog[f.v0];
+            v3 n  = glm::normalize(glm::cross(ab, ac));
+
+            u32 catalogIndex = tempNormalCatalog.size();
+            tempNormalCatalog.add(n);
+
+            f.vn0 = catalogIndex;
+            f.vn1 = catalogIndex;
+            f.vn2 = catalogIndex;
+
+            //log_debug("A=(%f,%f,%f) B=(%f,%f,%f) C=(%f,%f,%f)\n", a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+            //log_debug("N=(%f,%f,%f)\n", n.x, n.y, n.z);
+        }
+
+        normalCatalog = flatten(tempNormalCatalog);
+        normalCount   = vertexCount;
+    }
+
+
     Bucket_List<v3,  128> finalVertices(gMem->temp);
     Bucket_List<v3,  128> finalNormals(gMem->temp);
     Bucket_List<v2,  128> finalUvs(gMem->temp);
@@ -229,12 +255,14 @@ parse_obj_file(buffer32 buffer)
     for (u32 i = 0; i < faceCount; i++) {
         OBJ_Face& f = faceCatalog[i];
 
-        u32* idx0 = find_index(map, f.v0, f.vt0, f.vn0);
-        u32* idx1 = find_index(map, f.v1, f.vt1, f.vn1);
-        u32* idx2 = find_index(map, f.v2, f.vt2, f.vn2);
+        OBJ_Index_Bucket* idx0 = find_index(map, f.v0, f.vt0, f.vn0);
+        OBJ_Index_Bucket* idx1 = find_index(map, f.v1, f.vt1, f.vn1);
+        OBJ_Index_Bucket* idx2 = find_index(map, f.v2, f.vt2, f.vn2);
 
-        if (*idx0 == ~0u) {
-            *idx0 = finalVertices.size();
+        // A value of ~0u means the vertex is unique, so we need to create a new one and use _its_ index.
+        if (idx0->final == ~0u) {
+            idx0->final = finalVertices.size();
+
             finalVertices.add(vertexCatalog[f.v0]);
             finalUvs.add(uvCatalog[f.vt0]);
 
@@ -242,8 +270,9 @@ parse_obj_file(buffer32 buffer)
                 finalNormals.add(normalCatalog[f.vn0]);
         }
 
-        if (*idx1 == ~0u) {
-            *idx1 = finalVertices.size();
+        if (idx1->final == ~0u) {
+            idx1->final = finalVertices.size();
+
             finalVertices.add(vertexCatalog[f.v1]);
             finalUvs.add(uvCatalog[f.vt1]);
 
@@ -251,8 +280,9 @@ parse_obj_file(buffer32 buffer)
                 finalNormals.add(normalCatalog[f.vn1]);
         }
 
-        if (*idx2 == ~0u) {
-            *idx2 = finalVertices.size();
+        if (idx2->final == ~0u) {
+            idx2->final = finalVertices.size();
+
             finalVertices.add(vertexCatalog[f.v2]);
             finalUvs.add(uvCatalog[f.vt2]);
 
@@ -260,14 +290,15 @@ parse_obj_file(buffer32 buffer)
                 finalNormals.add(normalCatalog[f.vn2]);
         }
 
+        finalIndices.add(idx0->final);
+        finalIndices.add(idx1->final);
+        finalIndices.add(idx2->final);
+
+        // Translate the starting face index to the starting final vertex index while we're here.
         if (groupToFixIdx < groupCount && groups[groupToFixIdx].startingIndex == i) {
-            groups[groupToFixIdx].startingIndex = *idx0;
+            groups[groupToFixIdx].startingIndex = idx0->final;
             groupToFixIdx++;
         }
-
-        finalIndices.add(*idx0);
-        finalIndices.add(*idx1);
-        finalIndices.add(*idx2);
     }
 
     result.vertices = flatten(finalVertices);
@@ -388,3 +419,4 @@ parse_mtl_file(buffer32 buffer)
 
     return result;
 }
+
