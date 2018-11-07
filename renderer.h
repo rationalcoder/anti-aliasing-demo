@@ -5,14 +5,17 @@
 
 enum Render_Command_Type : u32
 {
+    // Commands for renderer_begin_frame().
     RenderCommand_Set_Clear_Color,
     RenderCommand_Set_Viewport,
     RenderCommand_Set_View_Matrix,
     RenderCommand_Set_Projection_Matrix,
     RenderCommand_Set_AA_Technique,
 
+    // Not actually used, but useful for sanity checks.
     RenderCommand_Begin_Render_Pass,
 
+    // Commands for renderer_exec().
     RenderCommand_Render_Debug_Lines,
     RenderCommand_Render_Debug_Cubes,
     RenderCommand_Render_Static_Mesh,
@@ -70,11 +73,6 @@ struct Set_AA_Technique
     AA_Technique technique;
 };
 
-struct Begin_Render_Pass
-{
-    void* _staged;
-};
-
 struct Render_Textured_Quad
 {
     void* _staged;
@@ -130,9 +128,19 @@ render_command_after(Render_Command_Header* header)
     return (T_*)payload_after(header);
 }
 
-// workspace is intended to be sub-allocated from storage and returned.
+// `workspace` is intended to be sub-allocated from storage and returned.
 extern b32
 renderer_init(Memory_Arena* storage, Memory_Arena* workspace);
 
+// @Hack
+extern void*
+renderer_upload_imgui_texture_atlas(void* data, u32 w, u32 h, u32 bbp);
+
+extern void
+renderer_begin_frame(Memory_Arena* workspace, void* commands, u32 count);
+
 extern b32
 renderer_exec(Memory_Arena* workspace, void* commands, u32 count);
+
+extern void
+renderer_end_frame(Memory_Arena* workspace, struct ImDrawData* data);

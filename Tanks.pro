@@ -4,6 +4,7 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 DEFINES -= UNICODE
+DEFINES += GLM_EXPERIMENTAL_ENABLED
 
 HEADERS += tanks.h \
     platform.h \
@@ -16,7 +17,6 @@ HEADERS += tanks.h \
     stb_image.h \
     stb_truetype.h \
     tanks.cpp \
-    stb.cpp \
     win32_tanks.h \
     globals.h \
     platform.cpp \
@@ -27,9 +27,21 @@ HEADERS += tanks.h \
     buffer.h \
     obj_file.h \
     obj_file.cpp \
-    containers.h
+    containers.h \
+    stb.h \
+    imconfig.h \
+    imgui_internal.h \
+    stb_rectpack.h \
+    stb_sprintf.h \
+    stb_textedit.h \
+    imgui_demo.cpp \
+    imgui_draw.cpp \
+    imgui_widgets.cpp \
+    imgui.cpp \
+    imgui_impl_win32.h \
+    imgui_impl_win32.cpp \
 
-SOURCES += win32_tanks.cpp \
+SOURCES += win32_tanks.cpp
 
 INCLUDEPATH += D:/projects/middleware/assimp4/include
 #INCLUDEPATH += D:/projects/middleware/SDL2-2.0.4/include

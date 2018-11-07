@@ -55,7 +55,7 @@ struct Game
     Memory_Arena rendererWorkspace; // for the actual renderer
 
     Push_Buffer* targetRenderCommandBuffer = nullptr; // where to push game render commands
-    Push_Buffer frameCommands;
+    Push_Buffer frameBeginCommands;
     Push_Buffer residentCommands;
 
     b32 shouldQuit = false;
@@ -124,7 +124,7 @@ make_allocator_scope(Memory_Arena* arena) { return Allocator_Scope(Allocator(&ar
 #define allocator_scope_impl(counter, ...) Allocator_Scope allocatorScope##counter = make_allocator_scope(__VA_ARGS__)
 #define allocator_scope(...) allocator_scope_impl(__COUNTER__, __VA_ARGS__)
 
-#define temp_scope() defer(reset(gMem->temp);)
+#define temp_scope() arena_scope(gMem->temp)
 
 
 struct Game_Memory
@@ -191,7 +191,7 @@ extern void
 game_play_sound(u64 microElapsed);
 
 extern void
-game_render(f32 frameRatio);
+game_render(f32 frameRatio, struct ImDrawData* drawData);
 
 extern void
 game_quit();

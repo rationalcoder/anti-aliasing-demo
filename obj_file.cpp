@@ -1,10 +1,10 @@
 #include "obj_file.h"
 
 #include <stdio.h>
+
 #include "tanks.h"
 #include "buffer.h"
 #include "containers.h"
-
 
 struct Material_Group
 {
@@ -23,14 +23,17 @@ struct OBJ_Face
     u32 v0;
     u32 vt0;
     u32 vn0;
+    u32 vtg0;
 
     u32 v1;
     u32 vt1;
     u32 vn1;
+    u32 vtg1;
 
     u32 v2;
     u32 vt2;
     u32 vn2;
+    u32 vtg2;
 };
 
 // NOTE(blake): @Speed. This "hash map" for mapping 3 indices to 1 is really bad.
@@ -40,50 +43,68 @@ struct OBJ_Index_Bucket
 {
     OBJ_Index_Bucket* next;
 
-    u32 v;
-    u32 vt;
-    u32 vn;
-    u32 final;
+    v3 vx;
+    v2 vt;
+    v3 vn;
+    v3 vtg;
+    u32 index;
 };
 
 struct Index_Map
 {
     OBJ_Index_Bucket** buckets;
+    u32 bucketCount;
 };
 
-inline Index_Map
+static inline Index_Map
 make_index_map(u32 vertexCount)
 {
     Index_Map result;
-    result.buckets = temp_array_zero(vertexCount, OBJ_Index_Bucket*);
+    result.buckets     = temp_array_zero(vertexCount, OBJ_Index_Bucket*);
+    result.bucketCount = vertexCount;
 
     return result;
 }
 
-inline u32
-hash_index(u32 v, u32 vt, u32 vn)
+static inline void
+hash_combine(umm& seed, umm hash)
 {
-    (void)vt;
-    (void)vn;
-    return v;
+    hash += 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    seed ^= hash;
+}
+
+template <umm Size_> static inline umm
+hash_obj_vertex(char (&buffer)[Size_])
+{
+    umm seed = 0;
+    for (umm i = 0; i < Size_/sizeof(umm); i++)
+        hash_combine(seed, ((umm*)buffer)[i]);
+
+    return seed;
 }
 
 inline OBJ_Index_Bucket*
-find_index(Index_Map& map, u32 v, u32 vt, u32 vn)
+find_index(Index_Map& map, v3 vx, v2 vt, v3 vn, v3 vtg)
 {
-    OBJ_Index_Bucket*& bucket = map.buckets[hash_index(v, vt, vn)];
+    char hashInput[sizeof(vx) + sizeof(vt) + sizeof(vn) + sizeof(vtg)];
+    *((v3*)(hashInput + 0))                                    = vx;
+    *((v2*)(hashInput + sizeof(vx)))                           = vt;
+    *((v3*)(hashInput + sizeof(vx) + sizeof(vt)))              = vn;
+    *((v3*)(hashInput + sizeof(vx) + sizeof(vt) + sizeof(vn))) = vtg;
 
-    //for (OBJ_Index_Bucket* b = bucket; b; b = b->next) {
-    //    if (v == b->v && vt == b->vt && vn == b->vn) {
-    //        return b;
-    //    }
-    //}
+    OBJ_Index_Bucket*& bucket = map.buckets[hash_obj_vertex(hashInput) % map.bucketCount];
+
+    for (OBJ_Index_Bucket* b = bucket; b; b = b->next) {
+        if (vx == b->vx && vt == b->vt && vn == b->vn && vtg == b->vtg)
+            return b;
+    }
 
     OBJ_Index_Bucket* newBucket = temp_type(OBJ_Index_Bucket);
-    newBucket->v     = v;
+    newBucket->vx    = vx;
     newBucket->vt    = vt;
     newBucket->vn    = vn;
-    newBucket->final = ~0u;
+    newBucket->vtg   = vn;
+    newBucket->index = ~0u;
 
     bucket = list_push(bucket, newBucket);
 
@@ -98,10 +119,11 @@ parse_obj_file(buffer32 buffer, u32 processFlags)
 
     OBJ_File result = {};
 
-    u32 vertexCount = 0;
-    u32 uvCount     = 0;
-    u32 normalCount = 0;
-    u32 faceCount   = 0;
+    u32 vertexCount  = 0;
+    u32 uvCount      = 0;
+    u32 normalCount  = 0;
+    u32 tangentCount = 0; // NOTE(blake): not present in obj files; just here for organization.
+    u32 faceCount    = 0;
 
     b32 gotMtllib = false;
 
@@ -127,10 +149,14 @@ parse_obj_file(buffer32 buffer, u32 processFlags)
     OBJ_Face* faceCatalog   = temp_array(faceCount,   OBJ_Face);
     v3*       vertexCatalog = temp_array(vertexCount, v3);
     v2*       uvCatalog     = temp_array(uvCount,     v2);
-    v3*       normalCatalog = nullptr;
+
+    // Potentially generated attributes.
+    v3* normalCatalog  = nullptr;
+    v3* tangentCatalog = nullptr;
 
     if (normalCount)
         normalCatalog = temp_array(normalCount, v3);
+
 
     u32 vIdx  = 0;
     u32 uvIdx = 0;
@@ -151,6 +177,8 @@ parse_obj_file(buffer32 buffer, u32 processFlags)
         else if (type == "vt") {
             v2 value;
             sscanf(cstr_line(line), "vt %f %f", &value.x, &value.y);
+
+            if (processFlags & PostProcess_FlipUVs) value.y = -value.y;
             uvCatalog[uvIdx++] = value;
         }
         else if (normalCount && type == "vn") {
@@ -218,6 +246,8 @@ parse_obj_file(buffer32 buffer, u32 processFlags)
 
     // Generate normals.
     if (!normalCount && processFlags & PostProcess_GenNormals) {
+        temp_scope();
+
         Bucket_List<v3, 128> tempNormalCatalog(gMem->temp);
 
         for (u32 i = 0; i < faceCount; i++) {
@@ -233,18 +263,120 @@ parse_obj_file(buffer32 buffer, u32 processFlags)
             f.vn0 = catalogIndex;
             f.vn1 = catalogIndex;
             f.vn2 = catalogIndex;
-
-            //log_debug("A=(%f,%f,%f) B=(%f,%f,%f) C=(%f,%f,%f)\n", a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
-            //log_debug("N=(%f,%f,%f)\n", n.x, n.y, n.z);
         }
 
         normalCatalog = flatten(tempNormalCatalog);
         normalCount   = vertexCount;
     }
 
+#if 1
+    // Generate tangents.
+    if (normalCount && processFlags & PostProcess_GenTangents) {
+        temp_scope();
+
+#if 1
+        Bucket_List<v3, 128> tempTangentCatalog(gMem->temp);
+
+        for (u32 i = 0; i < faceCount; i++) {
+            OBJ_Face& f = faceCatalog[i];
+
+            v3 ab = vertexCatalog[f.v1] - vertexCatalog[f.v0];
+            v3 ac = vertexCatalog[f.v2] - vertexCatalog[f.v0];
+
+            v2 duv0 = uvCatalog[f.vt1] - uvCatalog[f.vt0];
+            v2 duv1 = uvCatalog[f.vt2] - uvCatalog[f.vt0];
+
+            f32 r = 1.0f / (duv0.x * duv1.y - duv0.y * duv1.x);
+            v3 tangent = glm::normalize(r * (ab * duv1.y - ac * duv0.y));
+            //v3 tangent = glm::normalize(r * (ac * duv0.x - ab * duv1.x));
+
+            u32 idx = tempTangentCatalog.size();
+
+            f.vtg0 = idx + 0;
+            f.vtg1 = idx + 1;
+            f.vtg2 = idx + 2;
+
+            tempTangentCatalog.add(tangent);
+            tempTangentCatalog.add(tangent);
+            tempTangentCatalog.add(tangent);
+        }
+
+#else // Averaging (broken)
+        // Since we only care about direction here, averaging is as simple as adding.
+        // Bigger tangent vectors (for bigger triangles) will be weighted more, but that's even better.
+        v3* tAverages = temp_array_zero(vertexCount, v3);
+        v3* bAverages = temp_array_zero(vertexCount, v3);
+
+        // Calculate tangents and fill out the averages array (which is 1-1 with the vertex catalog).
+        for (u32 i = 0; i < faceCount; i++) {
+            OBJ_Face& f = faceCatalog[i];
+
+            v3 ab = vertexCatalog[f.v1] - vertexCatalog[f.v0];
+            v3 ac = vertexCatalog[f.v2] - vertexCatalog[f.v0];
+
+            v2 duv0 = uvCatalog[f.vt1] - uvCatalog[f.vt0];
+            v2 duv1 = uvCatalog[f.vt2] - uvCatalog[f.vt0];
+
+            f32 r = 1.0f / (duv0.x * duv1.y - duv0.y * duv1.x);
+
+            v3 tangent   = r * (ab * duv1.y - ac * duv0.y);
+            v3 bitangent = r * (ac * duv0.x - ab * duv1.x);
+
+            tAverages[f.v0] += tangent;
+            tAverages[f.v1] += tangent;
+            tAverages[f.v2] += tangent;
+
+            bAverages[f.v0] += bitangent;
+            bAverages[f.v1] += bitangent;
+            bAverages[f.v2] += bitangent;
+        }
+
+        Bucket_List<v3, 128> tempTangentCatalog(gMem->temp);
+
+        // Gram-Schmidt re-orthogonalize, make sure the resulting TBN bases will form a
+        // right-handed coordinate system, and add the tangents to their catalog.
+        for (u32 i = 0; i < faceCount; i++) {
+            OBJ_Face& f = faceCatalog[i];
+
+            v3& t0 = tAverages[f.v0];
+            v3& t1 = tAverages[f.v1];
+            v3& t2 = tAverages[f.v2];
+
+            v3& b0 = bAverages[f.v0];
+            v3& b1 = bAverages[f.v1];
+            v3& b2 = bAverages[f.v2];
+
+            v3 n = normalCatalog[f.v0]; // normals are constant across the face.
+
+            t0 = glm::normalize(t0 - n * glm::dot(n, t0));
+            t1 = glm::normalize(t1 - n * glm::dot(n, t1));
+            t2 = glm::normalize(t2 - n * glm::dot(n, t2));
+
+            if (glm::dot(glm::cross(n, t0), b0) < 0.0f) t0 = -t0;
+            if (glm::dot(glm::cross(n, t1), b1) < 0.0f) t1 = -t1;
+            if (glm::dot(glm::cross(n, t2), b2) < 0.0f) t2 = -t2;
+
+            u32 idx = tempTangentCatalog.size();
+
+            f.vtg0 = idx + 0;
+            f.vtg1 = idx + 1;
+            f.vtg2 = idx + 2;
+
+            tempTangentCatalog.add(t0);
+            tempTangentCatalog.add(t1);
+            tempTangentCatalog.add(t2);
+        }
+#endif
+
+        tangentCatalog = flatten(tempTangentCatalog);
+        tangentCount   = vertexCount;
+    }
+#endif
+
 
     Bucket_List<v3,  128> finalVertices(gMem->temp);
     Bucket_List<v3,  128> finalNormals(gMem->temp);
+    Bucket_List<v3,  128> finalTangents(gMem->temp);
     Bucket_List<v2,  128> finalUvs(gMem->temp);
     Bucket_List<u32, 128> finalIndices(gMem->temp);
 
@@ -255,56 +387,73 @@ parse_obj_file(buffer32 buffer, u32 processFlags)
     for (u32 i = 0; i < faceCount; i++) {
         OBJ_Face& f = faceCatalog[i];
 
-        OBJ_Index_Bucket* idx0 = find_index(map, f.v0, f.vt0, f.vn0);
-        OBJ_Index_Bucket* idx1 = find_index(map, f.v1, f.vt1, f.vn1);
-        OBJ_Index_Bucket* idx2 = find_index(map, f.v2, f.vt2, f.vn2);
+        v3 vx0  = vertexCatalog[f.v0];
+        v2 vt0  = uvCatalog[f.vt0];
+        v3 vn0  = normalCount ? normalCatalog[f.vn0] : v3();
+        v3 vtg0 = tangentCount ? tangentCatalog[f.vtg0] : v3();
 
-        // A value of ~0u means the vertex is unique, so we need to create a new one and use _its_ index.
-        if (idx0->final == ~0u) {
-            idx0->final = finalVertices.size();
+        v3 vx1  = vertexCatalog[f.v1];
+        v2 vt1  = uvCatalog[f.vt1];
+        v3 vn1  = normalCount ? normalCatalog[f.vn1] : v3();
+        v3 vtg1 = tangentCount ? tangentCatalog[f.vtg1] : v3();
 
-            finalVertices.add(vertexCatalog[f.v0]);
-            finalUvs.add(uvCatalog[f.vt0]);
+        v3 vx2  = vertexCatalog[f.v2];
+        v2 vt2  = uvCatalog[f.vt2];
+        v3 vn2  = normalCount ? normalCatalog[f.vn2] : v3();
+        v3 vtg2 = tangentCount ? tangentCatalog[f.vtg2] : v3();
 
-            if (normalCount)
-                finalNormals.add(normalCatalog[f.vn0]);
+        OBJ_Index_Bucket* idx0 = find_index(map, vx0, vt0, vn0, vtg0);
+        OBJ_Index_Bucket* idx1 = find_index(map, vx1, vt1, vn1, vtg1);
+        OBJ_Index_Bucket* idx2 = find_index(map, vx2, vt2, vn2, vtg2);
+
+        // A value of ~0u means we haven't seen this vertex before,
+        // so we need to create a new one, fillout the bucket, and use the index of this new vertex.
+        if (idx0->index == ~0u) {
+            idx0->index = finalVertices.size();
+
+            finalVertices.add(vx0);
+            finalUvs.add(vt0);
+
+            if (normalCount)  finalNormals.add(vn0);
+            if (tangentCount) finalTangents.add(vtg0);
         }
 
-        if (idx1->final == ~0u) {
-            idx1->final = finalVertices.size();
+        if (idx1->index == ~0u) {
+            idx1->index = finalVertices.size();
 
-            finalVertices.add(vertexCatalog[f.v1]);
-            finalUvs.add(uvCatalog[f.vt1]);
+            finalVertices.add(vx1);
+            finalUvs.add(vt1);
 
-            if (normalCount)
-                finalNormals.add(normalCatalog[f.vn1]);
+            if (normalCount)  finalNormals.add(vn1);
+            if (tangentCount) finalTangents.add(vtg1);
         }
 
-        if (idx2->final == ~0u) {
-            idx2->final = finalVertices.size();
+        if (idx2->index == ~0u) {
+            idx2->index = finalVertices.size();
 
-            finalVertices.add(vertexCatalog[f.v2]);
-            finalUvs.add(uvCatalog[f.vt2]);
+            finalVertices.add(vx2);
+            finalUvs.add(vt2);
 
-            if (normalCount)
-                finalNormals.add(normalCatalog[f.vn2]);
+            if (normalCount)  finalNormals.add(vn2);
+            if (tangentCount) finalTangents.add(vtg2);
         }
 
-        finalIndices.add(idx0->final);
-        finalIndices.add(idx1->final);
-        finalIndices.add(idx2->final);
+        finalIndices.add(idx0->index);
+        finalIndices.add(idx1->index);
+        finalIndices.add(idx2->index);
 
         // Translate the starting face index to the starting final vertex index while we're here.
         if (groupToFixIdx < groupCount && groups[groupToFixIdx].startingIndex == i) {
-            groups[groupToFixIdx].startingIndex = idx0->final;
+            groups[groupToFixIdx].startingIndex = idx0->index;
             groupToFixIdx++;
         }
     }
 
     result.vertices = flatten(finalVertices);
-    result.normals  = normalCount ? flatten(finalNormals) : nullptr;
     result.uvs      = flatten(finalUvs);
     result.indices  = flatten(finalIndices);
+    result.normals  = normalCount  ? flatten(finalNormals)  : nullptr;
+    result.tangents = tangentCount ? flatten(finalTangents) : nullptr;
 
     result.indexSize   = sizeof(u32); // TODO(blake): see if we can use anything smaller.
     result.indexCount  = finalIndices.size();

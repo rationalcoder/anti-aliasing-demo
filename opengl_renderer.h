@@ -7,7 +7,7 @@
 #include "mesh.h"
 #include "containers.h"
 
-#if 0
+#if 0 // @RemoveMe
 struct Staged_Static_Mesh
 {
     GLuint vertexBuffer = GL_INVALID_VALUE;
@@ -94,6 +94,7 @@ struct Cubes_Program
     GLint viewProjection;
     GLint centers;
     GLint color;
+    GLint scale;
 };
 
 struct Textured_Quad_Program

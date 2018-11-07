@@ -1,10 +1,12 @@
 #include "tanks.h"
 
+#include "stb.h"
+#include "imgui.h"
+
 #include "game_rendering.h"
 #include "obj_file.h"
 
 #include "platform.cpp"
-#include "stb.cpp"
 #include "opengl_renderer.cpp"
 #include "obj_file.cpp"
 
@@ -43,7 +45,8 @@ read_obj_file(const char* path)
 {
     buffer32 buffer = read_file_buffer(path);
 
-    return parse_obj_file(buffer, PostProcess_GenNormals);
+    return parse_obj_file(buffer, PostProcess_GenNormals | PostProcess_GenTangents | PostProcess_FlipUVs);
+    //return parse_obj_file(buffer, PostProcess_GenNormals);
 }
 
 static inline MTL_File
@@ -57,12 +60,12 @@ read_mtl_file(buffer32 path)
 static inline void
 setup_test_scene()
 {
-    gGame->camera.look_at(v3(0, 0, 5), v3(0, 1, 0));
+    gGame->camera.look_at(v3(-5, 0, 3), v3(0, 1, 0));
     gGame->camera.fov = 75;
 
     gGame->allocator.data = &gMem->modelLoading;
 
-    stbi_set_flip_vertically_on_load(true);
+    //stbi_set_flip_vertically_on_load(true);
 
     //OBJ_File bob  = read_obj_file("demo/assets/boblampclean.obj");
     OBJ_File heli = read_obj_file("demo/assets/hheli.obj");
@@ -79,7 +82,7 @@ setup_test_scene()
     gGame->allocator.data = &gMem->perm;
 
     // TODO(blake): make these macros that clear the render target after queing commands.
-    set_render_target(gGame->frameCommands); {
+    set_render_target(gGame->frameBeginCommands); {
         cmd_set_clear_color(0.015f, 0.015f, 0.015f, 1.0f);
         cmd_set_projection_matrix(glm::perspective(glm::radians(gGame->camera.fov), 16.0f/9.0f, .1f, 100.0f));
         cmd_set_view_matrix(gGame->camera.view_matrix());
@@ -87,26 +90,24 @@ setup_test_scene()
     }
 
     set_render_target(gGame->residentCommands); {
-        cmd_begin_render_pass();
-
-        v3 lightPos(-5, 0, 2);
-        v3 lightColor(1, 1, 0);
+        v3 lightPos(-3, 0, 1);
+        v3 lightColor(1, 1, 1);
 
         cmd_render_point_light(lightPos, lightColor);
-        cmd_render_debug_cube(lightPos, .2f, lightColor);
+        cmd_render_debug_cube(lightPos, .15f, lightColor);
 
 
         v3 color { .07, .07, .07 };
 
         Grid grid = make_xy_grid(20, 20);
         cmd_render_debug_lines(grid.vertices, grid.vertexCount, color);
+
         // render_debug_cube(v3(-10.5f, 10.5f, 0.0f), .5f, color);
 
         v3 centers[20] = {};
-        points_by_step(20, v3(-10.5f, 10.5f, 0.0f), v3(0, -1, 0), centers);
+        points_by_step(20, v3(-10.5f, 10.5f, 0.0f), v3(0, -.5, 0), centers);
         cmd_render_debug_cubes(view_of(centers), .5f, color);
         //cmd_render_static_mesh(bobMesh, mat4(.5f));
-        cmd_render_static_mesh(boxMesh, mat4(mat3(.5f)));
 
         mat4 xform;
         xform = glm::rotate(xform, glm::pi<f32>()/2, v3(1, 0, 0));
@@ -114,6 +115,14 @@ setup_test_scene()
 
         //cmd_render_static_mesh(bobMesh, xform);
         cmd_render_static_mesh(heliMesh, xform);
+
+        //cmd_render_static_mesh(boxMesh, mat4(mat3(.5f)));
+        cmd_render_static_mesh(boxMesh, mat4(1));
+
+        Debug_Normals boxNormals = make_debug_normals(boxMesh);
+        cmd_render_debug_lines(boxNormals.t, boxNormals.vertexCount, v3(1, 0, 0));
+        cmd_render_debug_lines(boxNormals.b, boxNormals.vertexCount, v3(0, 1, 0));
+        cmd_render_debug_lines(boxNormals.n, boxNormals.vertexCount, v3(0, 0, 1));
     }
 }
 
@@ -136,10 +145,10 @@ game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes)
     if (!renderer_init(&memory->perm, &gGame->rendererWorkspace))
         return false;
 
-    gGame->frameCommands    = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Frame Game Render Commands");
+    gGame->frameBeginCommands    = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Frame Game Render Commands");
     gGame->residentCommands = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Resident Game Render Commands");
 
-    gGame->targetRenderCommandBuffer = &gGame->frameCommands;
+    gGame->targetRenderCommandBuffer = &gGame->frameBeginCommands;
 
     setup_test_scene();
     return true;
@@ -227,7 +236,7 @@ game_resize(Game_Resolution clientRes)
     gGame->closestRes = closestResolution;
     gGame->clientRes  = clientRes;
 
-    set_render_target(gGame->frameCommands);
+    set_render_target(gGame->frameBeginCommands);
     cmd_set_viewport(0, 0, clientRes.w, clientRes.h);
 }
 
@@ -237,21 +246,26 @@ game_play_sound(u64)
 }
 
 extern void
-game_render(f32 /*frameRatio*/)
+game_render(f32 /*frameRatio*/, struct ImDrawData* imguiData)
 {
     // Render frame local changes like resizes, viewport, etc.
-    set_render_target(gGame->frameCommands);
+    set_render_target(gGame->frameBeginCommands);
     cmd_set_view_matrix(gGame->camera.view_matrix());
 
-    render_commands(gGame->frameCommands);
+    renderer_begin_frame(&gGame->rendererWorkspace,
+                         gGame->frameBeginCommands.arena.start,
+                         gGame->frameBeginCommands.count);
+
     render_commands(gGame->residentCommands);
+
+    renderer_end_frame(&gGame->rendererWorkspace, imguiData);
 }
 
 extern void
 game_end_frame()
 {
     reset(gMem->temp);
-    reset(gGame->frameCommands);
+    reset(gGame->frameBeginCommands);
 }
 
 extern void

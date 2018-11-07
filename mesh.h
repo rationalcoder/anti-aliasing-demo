@@ -71,6 +71,7 @@ struct Static_Mesh
 {
     f32*  vertices = nullptr;
     f32*  normals  = nullptr;
+    f32*  tangents = nullptr;
     f32*  uvs      = nullptr;
     void* indices  = nullptr;
 
@@ -86,5 +87,6 @@ struct Static_Mesh
     b32 has_uvs()      const { return uvs      != nullptr; }
     b32 has_indices()  const { return indices  != nullptr; }
     b32 has_normals()  const { return normals  != nullptr; }
+    b32 has_tangents() const { return tangents != nullptr; }
 };
 

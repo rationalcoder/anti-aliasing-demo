@@ -1,7 +1,7 @@
 # Material file for hheli.obj
 
 newmtl hheli.bmp
-Ns 0
+Ns 20
 d 1
 illum 2
 Kd 0.8 0.8 0.8

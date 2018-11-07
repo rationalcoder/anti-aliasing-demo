@@ -1,9 +1,10 @@
-#include "tanks.h"
 #include "tanks.cpp"
 
 #include <GL/gl3w.h>
 #include <GL/gl.h>
 #include <GL/wglext.h>
+
+#include "imgui_impl_win32.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
     #define WIN32_LEAN_AND_MEAN
@@ -13,8 +14,6 @@
 
 #include <cassert>
 #include <cstdio>
-
-constexpr u32 frames_to_average() { return 100; }
 
 struct Win32_Mouse_State
 {
@@ -43,10 +42,12 @@ struct Win32_State
 
     Win32_Mouse_State mouse;
 
-    b32 shouldQuit = false;
     Game_Resolution clientRes;
     u32 xCenter = 0;
     u32 yCenter = 0;
+
+    b32 shouldQuit   = false;
+    b32 fillingImgui = false;
 };
 
 struct Win32_Window_Position
@@ -100,9 +101,19 @@ win32_center_cursor()
     return point;
 }
 
+LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 static LRESULT CALLBACK
 win32_event_callback(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    // NOTE(blake): right now, our handling of mouse/keyboard events is so different from what
+    // imgui wants, I am just processing all events twice: once through imgui to set its state
+    // and see what events we should ignore, and once through our normal event handler.
+    if (gWin32State.fillingImgui) {
+        ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam);
+        return 0;
+    }
+
     Game_Input* input = &gWin32State.game->input;
     bit32* keys = &input->keyboard.cur.keys;
     flag8* mod  = input->keyboard.cur.mod;
@@ -247,6 +258,8 @@ win32_event_callback(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     return DefWindowProcA(hwnd, message, wParam, lParam);
 }
 
+#define WM_EVENTS_END_MARKER (WM_USER + 0x0001)
+
 static inline void
 win32_poll_events(Win32_State* state)
 {
@@ -257,6 +270,26 @@ win32_poll_events(Win32_State* state)
 
     state->mouse.xDragAccum = 0;
     state->mouse.yDragAccum = 0;
+
+#if 0
+    if (!state->mouse.dragging) {
+        state->fillingImgui = true;
+
+        SendMessageA(state->hwnd, WM_EVENTS_END_MARKER, 0, 0);
+
+        MSG msg;
+        while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_EVENTS_END_MARKER)
+                break;
+
+            TranslateMessage(&msg);
+            DispatchMessageA(&msg);
+            SendMessageA(state->hwnd, msg.message, msg.wParam, msg.lParam);
+        }
+
+        state->fillingImgui = false;
+    }
+#endif
 
     MSG msg;
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
@@ -275,6 +308,28 @@ win32_poll_events(Win32_State* state)
     win32_poll_xinput(state);
 }
 
+static inline void
+win32_imgui_init(Win32_State* state)
+{
+    ImGui::CreateContext();
+    ImGui_ImplWin32_Init(state->hwnd);
+
+    u8* out = nullptr;
+    int w = 0;
+    int h = 0;
+
+    ImGui::GetIO().Fonts->GetTexDataAsAlpha8(&out, &w, &h);
+    ImGui::MemFree(out);
+}
+
+static inline void
+win32_imgui_new_frame(Win32_State* win32State)
+{
+    win32_poll_events(win32State);
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+}
+
 static void 
 win32_game_loop(Win32_State* win32State)
 {
@@ -291,8 +346,10 @@ win32_game_loop(Win32_State* win32State)
 
     b32 firstFrame = true;
 
+    win32_imgui_init(win32State);
+
     for (;;) {
-        win32_poll_events(win32State);
+        win32_imgui_new_frame(win32State);
 
         LARGE_INTEGER current;
         QueryPerformanceCounter(&current);
@@ -305,7 +362,9 @@ win32_game_loop(Win32_State* win32State)
         prev      = current;
         lagMicro += (u32)elapsed.QuadPart;
 
-        game_update(lagMicro/1000000.0f);
+        f32 dt = lagMicro/1000000.0f;
+
+        game_update(dt);
         if (win32State->shouldQuit || gGame->shouldQuit)
             return;
 
@@ -330,8 +389,10 @@ win32_game_loop(Win32_State* win32State)
         soundPrev = soundCurrent;
         game_play_sound(soundElapsed.QuadPart);
 
-        if (should_step()) { game_render(lagMicro/(f32)stepMicro); }
-        else               { game_render(1); }
+        ImGui::Render();
+
+        if (should_step()) { game_render(lagMicro/(f32)stepMicro, ImGui::GetDrawData()); }
+        else               { game_render(1, ImGui::GetDrawData()); }
 
         game_end_frame();
 
@@ -749,3 +810,12 @@ WinMain(HINSTANCE /* hInstance */,
 
     return 0;
 }
+
+#define STB_IMPLEMENTATION
+#include "stb.h"
+
+#include "imgui.cpp"
+#include "imgui_widgets.cpp"
+#include "imgui_draw.cpp"
+#include "imgui_demo.cpp"
+#include "imgui_impl_win32.cpp"

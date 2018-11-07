@@ -193,6 +193,7 @@ load_static_mesh(const OBJ_File& obj, const MTL_File& mtl, const char* texturePa
 
     result.vertices = (f32*)obj.vertices;
     result.normals  = (f32*)obj.normals;
+    result.tangents = (f32*)obj.tangents;
     result.uvs      = (f32*)obj.uvs;
     result.indices  = obj.indices;
 
@@ -256,6 +257,91 @@ load_static_mesh(const OBJ_File& obj, const MTL_File& mtl, const char* texturePa
     result.material = material;
     return result;
 }
+
+struct Debug_Normals
+{
+    v3* t;
+    v3* b;
+    v3* n;
+
+    u32 vertexCount;
+};
+
+inline Debug_Normals
+make_debug_normals(const Static_Mesh& mesh)
+{
+    Debug_Normals result = {};
+    if (!mesh.has_normals()) return result;
+
+    v3* meshVertices = (v3*)mesh.vertices;
+    v3* meshNormals  = (v3*)mesh.normals;
+    v3* meshTangents = (v3*)mesh.tangents;
+
+    if (mesh.has_indices()) {
+        v3* normals    = allocate_array(mesh.indexCount * 2, v3);
+        v3* tangents   = nullptr;
+        v3* bitangents = nullptr;
+
+        if (mesh.has_tangents()) {
+            tangents   = allocate_array(mesh.indexCount * 2, v3);
+            bitangents = allocate_array(mesh.indexCount * 2, v3);
+        }
+
+        u32 lineBase = 0;
+        for (u32 i = 0; i < mesh.indexCount; i++, lineBase += 2) {
+            v3 v = meshVertices[i];
+
+            normals[lineBase + 0] = v;
+            normals[lineBase + 1] = v + .2f * meshNormals[i];
+
+            if (mesh.has_tangents()) {
+                tangents[lineBase + 0] = v;
+                tangents[lineBase + 1] = v + .2f * meshTangents[i];
+
+                bitangents[lineBase + 0] = v;
+                bitangents[lineBase + 1] = v + .2f * glm::cross(meshTangents[i], meshNormals[i]);
+            }
+        }
+
+        result.t = tangents;
+        result.b = bitangents;
+        result.n = normals;
+
+        result.vertexCount = mesh.indexCount * 2;
+    }
+    else {
+        v3* normals    = allocate_array(mesh.vertexCount * 2, v3);
+        v3* tangents   = nullptr;
+        v3* bitangents = nullptr;
+
+        if (mesh.has_tangents()) {
+            tangents   = allocate_array(mesh.vertexCount * 2, v3);
+            bitangents = allocate_array(mesh.vertexCount * 2, v3);
+        }
+
+        for (u32 i = 0; i < mesh.vertexCount * 2; i += 2) {
+            normals[i + 0] = meshVertices[i];
+            normals[i + 1] = meshVertices[i] + meshNormals[i];
+
+            if (mesh.has_tangents()) {
+                tangents[i + 0] = meshVertices[i];
+                tangents[i + 1] = meshVertices[i] + meshTangents[i];
+
+                bitangents[i + 0] = meshVertices[i];
+                bitangents[i + 1] = meshVertices[i] + glm::cross(meshNormals[i], meshTangents[i]);
+            }
+        }
+
+        result.t = tangents;
+        result.b = bitangents;
+        result.n = normals;
+
+        result.vertexCount = mesh.vertexCount * 2;
+    }
+
+    return result;
+}
+
 
 // Render Commands
 
@@ -328,12 +414,6 @@ cmd_set_projection_matrix(const mat4& matrix)
 {
     Set_Projection_Matrix* projMatrix = push_render_command(Set_Projection_Matrix);
     memcpy(projMatrix->mat4, &matrix, sizeof(matrix));
-}
-
-inline void
-cmd_begin_render_pass()
-{
-    push_render_command(Begin_Render_Pass);
 }
 
 inline void

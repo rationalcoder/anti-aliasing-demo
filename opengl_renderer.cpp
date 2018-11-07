@@ -117,6 +117,7 @@ load_cubes_program(const Shader_Catalog& catalog, Cubes_Program* program)
 
     program->viewProjection = glGetUniformLocation(id, "u_viewProjection");
     program->color          = glGetUniformLocation(id, "u_color");
+    program->scale          = glGetUniformLocation(id, "u_scale");
 
     return true;
 }
@@ -300,11 +301,11 @@ to_gl_format(Texture_Format format, b32 srgb)
             break;
         case TextureFormat_RGB:
             result.upload   = GL_RGB;
-            result.internal = GL_SRGB8;
+            result.internal = GL_RGB8;
             break;
         case TextureFormat_RGBA:
             result.upload   = GL_RGBA;
-            result.internal = GL_SRGB8_ALPHA8;
+            result.internal = GL_RGBA8;
             break;
         }
     }
@@ -315,6 +316,8 @@ to_gl_format(Texture_Format format, b32 srgb)
 static inline GLuint
 stage_texture(Texture texture, b32 srgb, b32 mipmaps, GLenum wrapType)
 {
+    if (!texture.data) return GL_INVALID_VALUE;
+
     GLuint handle = GL_INVALID_VALUE;
     glGenTextures(1, &handle);
 
@@ -377,6 +380,16 @@ stage_static_mesh(Rolling_Cache&, Render_Static_Mesh* cmd)
     }
 
     // TODO: tangents
+    if (mesh.has_tangents()) {
+        GLuint tangents = GL_INVALID_VALUE;
+        glGenBuffers(1, &tangents);
+
+        glEnableVertexAttribArray(3);
+        glBindBuffer(GL_ARRAY_BUFFER, tangents);
+        glBufferData(GL_ARRAY_BUFFER, mesh.vertexCount * 3 * sizeof(f32), mesh.tangents, GL_STATIC_DRAW);
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    }
+
 
     GLuint ebo = GL_INVALID_VALUE;
     glGenBuffers(1, &ebo);
@@ -412,8 +425,8 @@ stage_static_mesh(Rolling_Cache&, Render_Static_Mesh* cmd)
         }
 
         stagedGroup.diffuseMap  = stage_texture(group.diffuseMap,  true, true, GL_REPEAT);
-        stagedGroup.normalMap   = stage_texture(group.normalMap,   true, true, GL_NEAREST);
-        stagedGroup.specularMap = stage_texture(group.specularMap, true, true, GL_NEAREST);
+        stagedGroup.normalMap   = stage_texture(group.normalMap,   false, true, GL_REPEAT);
+        stagedGroup.specularMap = stage_texture(group.specularMap, false, true, GL_REPEAT);
         stagedGroup.emissiveMap = stage_texture(group.emissiveMap, true, true, GL_REPEAT);
         stagedGroup.specularExp = group.specularExp;
     }
@@ -481,15 +494,11 @@ renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
     return true;
 }
 
-extern b32
-renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
+extern void
+renderer_begin_frame(Memory_Arena* workspace, void* commands, u32 count)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
     (void)renderer;
-
-    renderer->pointLight = nullptr;
-
-    allocator_scope(workspace);
 
     Render_Command_Header* header = (Render_Command_Header*)commands;
     for (u32 i = 0; i < count; i++, header = next_header(header, header->size)) {
@@ -514,10 +523,25 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
             memcpy(&renderer->projectionMatrix, cmd->mat4, sizeof(renderer->projectionMatrix));
             break;
         }
-        case RenderCommand_Begin_Render_Pass: {
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            break;
         }
+    }
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+extern b32
+renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
+{
+    OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
+    (void)renderer;
+
+    renderer->pointLight = nullptr;
+
+    allocator_scope(workspace);
+
+    Render_Command_Header* header = (Render_Command_Header*)commands;
+    for (u32 i = 0; i < count; i++, header = next_header(header, header->size)) {
+        switch (header->type) {
         case RenderCommand_Render_Debug_Lines: {
             Render_Debug_Lines* cmd = render_command_after<Render_Debug_Lines>(header);
 
@@ -549,6 +573,7 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
             mat4 viewProjection = renderer->projectionMatrix * renderer->viewMatrix;
             glUniformMatrix4fv(program.viewProjection, 1, GL_FALSE, glm::value_ptr(viewProjection));
             glUniform3f(program.color, cmd->r, cmd->g, cmd->b);
+            glUniform1f(program.scale, cmd->halfWidth);
 
             glDrawElementsInstanced(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, 0, cmd->count);
 
@@ -571,13 +596,10 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
             glm::mat3 normalMatrix = mat3(glm::inverseTranspose(modelView));
             glUniformMatrix3fv(program.normalMatrix, 1, GL_FALSE, glm::value_ptr(normalMatrix));
 
-            glUniform1i(program.diffuseMap,  0);
-            glUniform1i(program.normalMap,   1);
-            glUniform1i(program.specularMap, 2);
-
             if (renderer->pointLight) {
                 const Render_Point_Light& light = *renderer->pointLight;
 
+                //v3 cSpaceLightPos = v3(renderer->viewMatrix * v4(light.x, light.y, light.z, 1));
                 v3 cSpaceLightPos = v3(renderer->viewMatrix * v4(light.x, light.y, light.z, 1));
                 glUniform1i(program.lit, 1);
                 glUniform3fv(program.lightPos, 1, glm::value_ptr(cSpaceLightPos));
@@ -607,6 +629,17 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
                     glBindTexture(GL_TEXTURE_2D, group.diffuseMap);
                 }
 
+                if (group.normalMap == GL_INVALID_VALUE) {
+                    glUniform1i(program.hasNormalMap, 0);
+                }
+                else {
+                    glUniform1i(program.hasNormalMap, 1);
+                    glUniform1i(program.normalMap, 1);
+
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_2D, group.normalMap);
+                }
+
                 // TODO: other maps.
 
                 glDrawElements(GL_TRIANGLES, group.indexCount, group.indexType, (void*)(umm)group.indexStart);
@@ -629,4 +662,9 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
     }
 
     return true;
+}
+
+extern void
+renderer_end_frame(Memory_Arena* workspace, struct ImDrawData* data)
+{
 }

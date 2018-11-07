@@ -17,6 +17,7 @@ struct OBJ_File
 
     v3* vertices;
     v3* normals;
+    v3* tangents;
     v2* uvs;
 
     void* indices;
@@ -60,6 +61,7 @@ enum Post_Process_Flags : u32
     PostProcess_None        = 0x0,
     PostProcess_GenNormals  = 0x1,
     PostProcess_GenTangents = PostProcess_GenNormals | 0x2,
+    PostProcess_FlipUVs     = 0x4
 };
 
 extern OBJ_File

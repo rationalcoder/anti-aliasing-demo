@@ -94,8 +94,8 @@ struct Bucket_List
 
     T_* add_default() noexcept;
     T_* add_forget() noexcept;
-    T_* add(T_& val) noexcept;
-    T_* add(T_&& val) noexcept;
+    T_* add(const T_& val) noexcept;
+    //T_* add(T_&& val) noexcept;
 
     u32 size() const noexcept { return _size; }
 
@@ -161,7 +161,7 @@ Bucket_List<T_, BucketSize_>::add_forget() noexcept
 }
 
 template <typename T_, u32 BucketSize_> inline T_*
-Bucket_List<T_, BucketSize_>::add(T_& val) noexcept
+Bucket_List<T_, BucketSize_>::add(const T_& val) noexcept
 {
     _size++;
     if (_next != _tail->end())
