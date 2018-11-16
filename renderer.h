@@ -132,10 +132,6 @@ render_command_after(Render_Command_Header* header)
 extern b32
 renderer_init(Memory_Arena* storage, Memory_Arena* workspace);
 
-// @Hack
-extern void*
-renderer_upload_imgui_texture_atlas(void* data, u32 w, u32 h, u32 bbp);
-
 extern void
 renderer_begin_frame(Memory_Arena* workspace, void* commands, u32 count);
 

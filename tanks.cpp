@@ -145,8 +145,8 @@ game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes)
     if (!renderer_init(&memory->perm, &gGame->rendererWorkspace))
         return false;
 
-    gGame->frameBeginCommands    = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Frame Game Render Commands");
-    gGame->residentCommands = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Resident Game Render Commands");
+    gGame->frameBeginCommands = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Frame Game Render Commands");
+    gGame->residentCommands   = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Resident Game Render Commands");
 
     gGame->targetRenderCommandBuffer = &gGame->frameBeginCommands;
 
@@ -224,6 +224,8 @@ game_update(f32 dt)
     camera.up = v3(0.0f, 0.0f, 1.0f);
 
     // log_debug("FPS: %f %f\n", gGame->frameStats.fps(), dt);
+
+    ImGui::ShowDemoWindow();
 }
 
 extern void

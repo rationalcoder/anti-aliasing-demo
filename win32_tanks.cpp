@@ -271,11 +271,11 @@ win32_poll_events(Win32_State* state)
     state->mouse.xDragAccum = 0;
     state->mouse.yDragAccum = 0;
 
-#if 0
+#if 1
     if (!state->mouse.dragging) {
         state->fillingImgui = true;
 
-        SendMessageA(state->hwnd, WM_EVENTS_END_MARKER, 0, 0);
+        PostMessageA(state->hwnd, WM_EVENTS_END_MARKER, 0, 0);
 
         MSG msg;
         while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
@@ -284,7 +284,7 @@ win32_poll_events(Win32_State* state)
 
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
-            SendMessageA(state->hwnd, msg.message, msg.wParam, msg.lParam);
+            PostMessageA(state->hwnd, msg.message, msg.wParam, msg.lParam);
         }
 
         state->fillingImgui = false;
@@ -313,13 +313,9 @@ win32_imgui_init(Win32_State* state)
 {
     ImGui::CreateContext();
     ImGui_ImplWin32_Init(state->hwnd);
+    ImGui::StyleColorsDark();
 
-    u8* out = nullptr;
-    int w = 0;
-    int h = 0;
-
-    ImGui::GetIO().Fonts->GetTexDataAsAlpha8(&out, &w, &h);
-    ImGui::MemFree(out);
+    // NOTE(blake): initting imgui is done in game_init() so we can do it after renderer_init().
 }
 
 static inline void
@@ -345,8 +341,6 @@ win32_game_loop(Win32_State* win32State)
     u32 stepMicro = us_per_update();
 
     b32 firstFrame = true;
-
-    win32_imgui_init(win32State);
 
     for (;;) {
         win32_imgui_new_frame(win32State);
@@ -777,6 +771,8 @@ win32_init(Win32_State* state, Platform* platformOut, Game_Memory* memoryOut,
     state->clientRes = *clientResOut;
     state->xCenter   = clientResOut->w/2;
     state->yCenter   = clientResOut->h/2;
+
+    win32_imgui_init(state);
 }
 
 static void

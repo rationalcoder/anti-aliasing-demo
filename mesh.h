@@ -36,7 +36,7 @@ enum Texture_Type
 
 struct Texture
 {
-    u8* data = nullptr;
+    void* data = nullptr;
     Texture_Format format = TextureFormat_Num_;
     s32 x = 0;
     s32 y = 0;

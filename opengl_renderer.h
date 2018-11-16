@@ -194,6 +194,22 @@ Rolling_Cache::evict()
     return handles[oldest].handle;
 }
 
+struct ImGui_Program
+{
+    GLuint id              = GL_INVALID_VALUE;
+    GLint projectionMatrix = GL_INVALID_VALUE;
+    GLint texture          = GL_INVALID_VALUE;
+};
+
+struct ImGui_Resources
+{
+    ImGui_Program program;
+
+    GLuint textureAtlas = GL_INVALID_VALUE;
+    GLuint vao          = GL_INVALID_VALUE;
+    GLuint vertexBuffer = GL_INVALID_VALUE;
+    GLuint indexBuffer  = GL_INVALID_VALUE;
+};
 
 struct OpenGL_Renderer
 {
@@ -203,8 +219,10 @@ struct OpenGL_Renderer
     Cubes_Program cubesProgram;
     Static_Mesh_Program staticMeshProgram;
 
-    GLuint debugCubeVertexBuffer;
-    GLuint debugCubeIndexBuffer;
+    GLuint debugCubeVertexBuffer = GL_INVALID_VALUE;
+    GLuint debugCubeIndexBuffer  = GL_INVALID_VALUE;
+
+    ImGui_Resources imgui;
 
     Rolling_Cache debugLinesCache;
     Rolling_Cache debugCubesCache;
@@ -216,3 +234,5 @@ struct OpenGL_Renderer
     // TODO(blake): more lights!
     struct Render_Point_Light* pointLight;
 };
+
+

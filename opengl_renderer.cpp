@@ -6,6 +6,8 @@
 
 #include <GL/gl3w.h>
 
+#include "imgui.h"
+
 #include "memory.h"
 #include "tanks.h"
 #include "opengl_renderer.h"
@@ -265,7 +267,7 @@ struct GL_Format
 
 // TODO(blake): handle more than 8 bits ber channel.
 static inline GL_Format
-to_gl_format(Texture_Format format, b32 srgb)
+to_gl_format(Texture_Format format, bool srgb)
 {
     GL_Format result;
 
@@ -313,8 +315,16 @@ to_gl_format(Texture_Format format, b32 srgb)
     return result;
 }
 
+enum Texture_Options
+{
+    TexOpt_None          = 0x0,
+    TexOpt_SRGB          = 0x1,
+    TexOpt_Mipmap        = 0x2,
+    TexOpt_UnpackRowZero = 0x4,
+};
+
 static inline GLuint
-stage_texture(Texture texture, b32 srgb, b32 mipmaps, GLenum wrapType)
+stage_texture(Texture texture, u32 options, GLenum wrapType)
 {
     if (!texture.data) return GL_INVALID_VALUE;
 
@@ -323,11 +333,14 @@ stage_texture(Texture texture, b32 srgb, b32 mipmaps, GLenum wrapType)
 
     glBindTexture(GL_TEXTURE_2D, handle);
 
-    GL_Format format = to_gl_format(texture.format, srgb);
+    if (options & TexOpt_UnpackRowZero)
+        glPixelStorei(GL_TEXTURE_2D, 0);
+
+    GL_Format format = to_gl_format(texture.format, options & TexOpt_SRGB);
     glTexImage2D(GL_TEXTURE_2D, 0, format.internal, texture.x, texture.y, 0, format.upload, GL_UNSIGNED_BYTE, texture.data);
 
     GLuint minFilter = GL_LINEAR;
-    if (mipmaps) {
+    if (options & TexOpt_Mipmap) {
         glGenerateMipmap(GL_TEXTURE_2D);
         minFilter = GL_NEAREST_MIPMAP_LINEAR;
     }
@@ -424,10 +437,10 @@ stage_static_mesh(Rolling_Cache&, Render_Static_Mesh* cmd)
             continue;
         }
 
-        stagedGroup.diffuseMap  = stage_texture(group.diffuseMap,  true, true, GL_REPEAT);
-        stagedGroup.normalMap   = stage_texture(group.normalMap,   false, true, GL_REPEAT);
-        stagedGroup.specularMap = stage_texture(group.specularMap, false, true, GL_REPEAT);
-        stagedGroup.emissiveMap = stage_texture(group.emissiveMap, true, true, GL_REPEAT);
+        stagedGroup.diffuseMap  = stage_texture(group.diffuseMap,  TexOpt_SRGB | TexOpt_Mipmap, GL_REPEAT);
+        stagedGroup.emissiveMap = stage_texture(group.emissiveMap, TexOpt_SRGB | TexOpt_Mipmap, GL_REPEAT);
+        stagedGroup.normalMap   = stage_texture(group.normalMap,   TexOpt_Mipmap, GL_REPEAT);
+        stagedGroup.specularMap = stage_texture(group.specularMap, TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.specularExp = group.specularExp;
     }
 
@@ -460,6 +473,70 @@ load_debug_cube_buffers(GLuint* vertexBuffer, GLuint* indexBuffer)
     return true;
 }
 
+static inline b32
+load_imgui_texture_atlas(ImGui_Resources* res)
+{
+    u8* out = nullptr;
+    int w   = 0;
+    int h   = 0;
+    int bbp = 0;
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->GetTexDataAsAlpha8(&out, &w, &h, &bbp);
+
+    Texture tex;
+    tex.data = out;
+    tex.format = TextureFormat_Grey;
+    tex.x = w;
+    tex.y = h;
+
+    GLuint atlasHandle = stage_texture(tex, TexOpt_UnpackRowZero, GL_CLAMP_TO_EDGE);
+    res->textureAtlas = atlasHandle;
+    io.Fonts->TexID   = (void*)(umm)atlasHandle;
+
+    ImGui::MemFree(out);
+
+    return true;
+}
+
+static inline b32
+load_imgui(ImGui_Resources* res)
+{
+    ImGui_Program& program = res->program;
+
+    GLuint vs = GL_INVALID_VALUE;
+    GLuint fs = GL_INVALID_VALUE;
+    if (!load_shader("demo/imgui.vs", GL_VERTEX_SHADER,   &vs)) return false;
+    defer( glDeleteShader(vs); );
+
+    if (!load_shader("demo/imgui.fs", GL_FRAGMENT_SHADER, &fs)) return false;
+    defer( glDeleteShader(fs); );
+
+    if (!create_and_link_program(vs, fs, &program.id)) return false;
+
+    program.projectionMatrix = glGetUniformLocation(program.id, "u_projectionMatrix");
+    program.texture          = glGetUniformLocation(program.id, "u_texture");
+
+    glGenVertexArrays(1, &res->vao);
+
+    glGenBuffers(1, &res->vertexBuffer);
+    glGenBuffers(1, &res->indexBuffer);
+
+    glBindVertexArray(res->vao);
+
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    if (!load_imgui_texture_atlas(res)) return false;
+
+    return true;
+}
+
 extern b32
 renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
 {
@@ -477,17 +554,21 @@ renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
     if (!load_shader("demo/static_mesh.vs",     GL_VERTEX_SHADER,   &catalog.staticMeshVertexShader))     return false;
     if (!load_shader("demo/solid.fs",           GL_FRAGMENT_SHADER, &catalog.solidFramentShader))         return false;
     if (!load_shader("demo/static_mesh.fs",     GL_FRAGMENT_SHADER, &catalog.staticMeshFragmentShader))   return false;
-
     if (!load_lines_program(catalog, &renderer->linesProgram))            return false;
     if (!load_cubes_program(catalog, &renderer->cubesProgram))            return false;
     if (!load_static_mesh_program(catalog, &renderer->staticMeshProgram)) return false;
 
     if (!load_debug_cube_buffers(&renderer->debugCubeVertexBuffer, &renderer->debugCubeIndexBuffer)) return false;
+    if (!load_imgui(&renderer->imgui)) return false;
 
+    // NOTE(blake): you _need_ to specify the blend equation/func.
     glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     glEnable(GL_DEPTH_TEST);
-    glEnable(GL_FRAMEBUFFER_SRGB);
     glEnable(GL_CULL_FACE);
+    glEnable(GL_FRAMEBUFFER_SRGB); // FIXME: multiple fbs later for AA techniques, toggle this on/off for ui, etc.
 
     glCullFace(GL_BACK);
 
@@ -665,6 +746,100 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
 }
 
 extern void
-renderer_end_frame(Memory_Arena* workspace, struct ImDrawData* data)
+renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
 {
+    // TODO: framebuffer business.
+
+    // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer      coordinates)
+    ImGuiIO& io  = ImGui::GetIO();
+    int fbWidth  = (int)(drawData->DisplaySize.x * io.DisplayFramebufferScale.x);
+    int fbHeight = (int)(drawData->DisplaySize.y * io.DisplayFramebufferScale.y);
+    if (fbWidth <= 0 || fbHeight <= 0)
+        return;
+
+    drawData->ScaleClipRects(io.DisplayFramebufferScale);
+
+    OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
+    ImGui_Resources& imgui    = renderer->imgui;
+
+    glEnable(GL_SCISSOR_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_FRAMEBUFFER_SRGB);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    glUseProgram(imgui.program.id);
+    glUniform1i(imgui.program.id, 0);
+
+    v2 topLeft      = drawData->DisplayPos;
+    v2 bottomRight  = (v2)drawData->DisplayPos + (v2)drawData->DisplaySize;
+    mat4 projection = glm::ortho(topLeft.x, bottomRight.x, bottomRight.y, topLeft.y);
+    glUniformMatrix4fv(imgui.program.projectionMatrix, 1, GL_FALSE, glm::value_ptr(projection));
+
+    glBindVertexArray(imgui.vao);
+
+    // TODO: Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled
+    // TODO: Setup viewport using draw_data->DisplaySize
+    // TODO: Setup orthographic projection matrix cover draw_data->DisplayPos to draw_data->DisplayPos + draw_data->DisplaySize
+    // TODO: Setup shader: vertex { float2 pos, float2 uv, u32 color }, fragment shader sample color from 1 texture, multiply by vertex color.
+    for (int listI = 0; listI < drawData->CmdListsCount; listI++) {
+        const ImDrawList* cmdList      = drawData->CmdLists[listI];
+        const ImDrawVert* vertexBuffer = cmdList->VtxBuffer.Data;
+        const ImDrawIdx*  indexBuffer  = cmdList->IdxBuffer.Data;
+
+        glBindBuffer(GL_ARRAY_BUFFER, imgui.vertexBuffer);
+        glBufferData(GL_ARRAY_BUFFER, cmdList->VtxBuffer.Size * sizeof(ImDrawVert), vertexBuffer, GL_STREAM_DRAW);
+        glVertexAttribPointer(0, 2, GL_FLOAT,         GL_FALSE, sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, pos));
+        glVertexAttribPointer(1, 2, GL_FLOAT,         GL_FALSE, sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, uv));
+        glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, col));
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, imgui.indexBuffer);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, cmdList->IdxBuffer.Size * sizeof(ImDrawVert), indexBuffer, GL_STREAM_DRAW);
+
+        const ImDrawIdx* indexBufferOffset = 0;
+
+        for (int cmdI = 0; cmdI < cmdList->CmdBuffer.Size; cmdI++) {
+            const ImDrawCmd* cmd = &cmdList->CmdBuffer[cmdI];
+            if (cmd->UserCallback) {
+                cmd->UserCallback(cmdList, cmd);
+            }
+            else {
+                GLuint texture = (GLuint)(umm)cmd->TextureId;
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, texture);
+
+                v4 clipRect = v4(cmd->ClipRect.x - topLeft.x, cmd->ClipRect.y - topLeft.y, cmd->ClipRect.z - topLeft.x, cmd->ClipRect.w - topLeft.y);
+                if (clipRect.x < fbWidth && clipRect.y < fbHeight && clipRect.z >= 0.0f && clipRect.q >= 0.0f) {
+                    // We are using scissoring to clip some objects. All low-level graphics API should supports it.
+                    // - If your engine doesn't support scissoring yet, you may ignore this at first. You will get some small glitches
+                    //   (some elements visible outside their bounds) but you can fix that once everything else works!
+                    // - Clipping coordinates are provided in imgui coordinates space (from draw_data->DisplayPos to draw_data->DisplayPos + draw_data->DisplaySize)
+                    //   In a single viewport application, draw_data->DisplayPos will always be (0,0) and draw_data->DisplaySize will always be == io.DisplaySize.
+                    //   However, in the interest of supporting multi-viewport applications in the future (see 'viewport' branch on github),
+                    //   always subtract draw_data->DisplayPos from clipping bounds to convert them to your viewport space.
+                    // - Note that pcmd->ClipRect contains Min+Max bounds. Some graphics API may use Min+Max, other may use Min+Size (size being Max-Min)
+                    glScissor((int)(cmd->ClipRect.x - topLeft.x), (int)(cmd->ClipRect.y - topLeft.y), (int)(cmd->ClipRect.z - topLeft.x), (int)(cmd->ClipRect.w - topLeft.y));
+
+                    // Render 'pcmd->ElemCount/3' indexed triangles.
+                    // By default the indices ImDrawIdx are 16-bits, you can change them to 32-bits in imconfig.h if your engine doesn't support 16-bits indices.
+                    constexpr GLenum kIndexType = sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
+                    //glDrawElements(GL_TRIANGLES, cmd->ElemCount, kIndexType, (void*)(umm)indexBufferOffset);
+                    glDrawElements(GL_TRIANGLES, cmd->ElemCount, kIndexType, indexBufferOffset);
+                }
+            }
+
+            indexBufferOffset += cmd->ElemCount;
+        }
+    }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glUseProgram(0);
+
+    glEnable(GL_FRAMEBUFFER_SRGB);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
 }
