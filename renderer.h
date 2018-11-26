@@ -3,6 +3,10 @@
 #include "memory.h"
 #include "mesh.h"
 
+using Renderer_Handle      = void*;
+using Renderer_Framebuffer = void*;
+
+
 enum Render_Command_Type : u32
 {
     // Commands for renderer_begin_frame().
@@ -12,7 +16,7 @@ enum Render_Command_Type : u32
     RenderCommand_Set_Projection_Matrix,
     RenderCommand_Set_AA_Technique,
 
-    // Not actually used, but useful for sanity checks.
+    // Not actually used, but useful numerically for sanity checks.
     RenderCommand_Begin_Render_Pass,
 
     // Commands for renderer_exec().
@@ -56,15 +60,19 @@ struct Set_Projection_Matrix
 
 enum AA_Technique : u32
 {
-    FXAA,
-    MSAA_2X,
-    MSAA_4X,
-    MSAA_8X,
-    MSAA_16X,
-    MSAA_2X_FXAA,
-    MSAA_4X_FXAA,
-    MSAA_8X_FXAA,
-    MSAA_16X_FXAA,
+    AA_INVALID,
+    AA_NONE,
+    AA_FXAA,
+    AA_MSAA_2X,
+    AA_MSAA_4X,
+    AA_MSAA_8X,
+    AA_MSAA_16X,
+    AA_MSAA_2X_FXAA,
+    AA_MSAA_4X_FXAA,
+    AA_MSAA_8X_FXAA,
+
+    AA_END_,
+    AA_COUNT_ = AA_END_-1,
 };
 
 struct Set_AA_Technique
@@ -140,3 +148,15 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count);
 
 extern void
 renderer_end_frame(Memory_Arena* workspace, struct ImDrawData* data);
+
+
+//{ @Temporary
+extern void
+renderer_demo_aa(Memory_Arena* workspace, Game_Resolution res, AA_Technique technique,
+                 void* beginCommand, u32 beginCount,
+                 void* execCommands, u32 execCount,
+                 struct ImDrawData* endFrameDrawData);
+
+extern void
+renderer_stop_aa_demo(Memory_Arena* workspace);
+//}

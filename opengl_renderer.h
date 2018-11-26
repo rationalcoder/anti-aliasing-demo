@@ -231,8 +231,11 @@ struct OpenGL_Renderer
     mat4 viewMatrix = mat4(1);
     mat4 projectionMatrix = mat4(1);
 
-    // TODO(blake): more lights!
+    // TODO(blake): more lights! Light groups!
     struct Render_Point_Light* pointLight;
+
+    b32 runningAADemo   = false;
+    b32 aaSceneRendered = false;
 };
 
 

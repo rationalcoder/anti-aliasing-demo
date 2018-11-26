@@ -16,9 +16,9 @@ HEADERS += tanks.h \
     camera.h \
     stb_image.h \
     stb_truetype.h \
-    tanks.cpp \
     win32_tanks.h \
     globals.h \
+    tanks.cpp \
     platform.cpp \
     renderer.h \
     opengl_renderer.h \
@@ -41,7 +41,7 @@ HEADERS += tanks.h \
     imgui_impl_win32.h \
     imgui_impl_win32.cpp \
 
-SOURCES += win32_tanks.cpp
+SOURCES += win32_tanks.cpp \
 
 INCLUDEPATH += D:/projects/middleware/assimp4/include
 #INCLUDEPATH += D:/projects/middleware/SDL2-2.0.4/include

@@ -87,6 +87,12 @@ down_cast(void* from)
     return result;
 }
 
+static inline f32
+map_bilateral(s32 val, u32 range)
+{
+    return val/(range/2.0f);
+}
+
 // NOTE(bmartin): manual overloading to handle ambiguity with type deduction when literals are passed.
 inline void right_rotate_value(u8&  value, u8  min, u8  max, u8  step = 1) { value = value == max ? min : value + step; }
 inline void right_rotate_value(u16& value, u16 min, u16 max, u16 step = 1) { value = value == max ? min : value + step; }

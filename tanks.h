@@ -1,11 +1,14 @@
 #pragma once
 
+#define USING_IMGUI 1
+
 #include "common.h"
 #include "memory.h"
 #include "platform.h"
 #include "primitives.h"
 #include "input.h"
 #include "camera.h"
+#include "renderer.h"
 
 constexpr u32 us_per_update() { return 5000; }
 constexpr b32 should_step()   { return false; }
@@ -35,6 +38,48 @@ struct Game_State
     Game_State* (*update)(void*) = nullptr;
 };
 
+struct AA_Demo
+{
+    bool showSceneConfig = true;
+
+    AA_Technique techniqueCatalog[AA_COUNT_] =
+    {
+        AA_NONE, AA_FXAA, AA_MSAA_2X, AA_MSAA_2X_FXAA, AA_MSAA_4X,
+        AA_MSAA_4X_FXAA, AA_MSAA_8X, AA_MSAA_8X_FXAA, AA_MSAA_16X,
+    };
+
+    AA_Technique curTechniques[AA_COUNT_] = {};
+    u32          chosenCount              = 0;
+
+    AA_Technique selectedTechnique = AA_NONE;
+
+    Game_Resolution res;
+
+    b32 on = false;
+
+    // Saved information
+    AA_Technique chosenTechniques[AA_COUNT_] = {};
+    u32          catalogOffset               = 0;
+    char         euid[17]                    = {};
+};
+
+inline const char*
+cstr(AA_Technique t)
+{
+    switch (t) {
+    case AA_NONE:         return "None";
+    case AA_FXAA:         return "FXAA";
+    case AA_MSAA_2X:      return "MSAA 2X";
+    case AA_MSAA_4X:      return "MSAA 4X";
+    case AA_MSAA_8X:      return "MSAA 8X";
+    case AA_MSAA_16X:     return "MSAA 16X";
+    case AA_MSAA_2X_FXAA: return "MSAA 2X FXAA";
+    case AA_MSAA_4X_FXAA: return "MSAA 4X FXAA";
+    case AA_MSAA_8X_FXAA: return "MSAA 8X FXAA";
+    }
+
+    return "Unknown";
+}
 
 struct Game
 {
@@ -55,10 +100,13 @@ struct Game
     Memory_Arena rendererWorkspace; // for the actual renderer
 
     Push_Buffer* targetRenderCommandBuffer = nullptr; // where to push game render commands
-    Push_Buffer frameBeginCommands;
-    Push_Buffer residentCommands;
+    Push_Buffer  frameBeginCommands;
+    Push_Buffer  residentCommands;
 
     b32 shouldQuit = false;
+
+    AA_Demo demo; // @Temporary
+    b32 demoStarted = false;
 };
 
 
@@ -93,7 +141,7 @@ game_allocate_copy_(umm size, u32 alignment, void* data)
 #define allocate_new(type, ...) (new (game_allocate_(sizeof(type), alignof(type))) (type)(__VA_ARGS__))
 
 #define temp_allocate(size, alignment) push(*gGame->temp, size, alignment)
-#define temp_allocate_bytes(size) (char*)push_bytes(*gGame->temp, size)
+#define temp_bytes(size) (char*)push_bytes(*gGame->temp, size)
 #define temp_array(n, type) (type*)push(*gGame->temp, (n)*sizeof(type), alignof(type))
 #define temp_array_zero(n, type) (type*)push_zero(*gGame->temp, (n)*sizeof(type), alignof(type))
 #define temp_array_copy(n, type, data) (type*)push_copy(*gGame->temp, (n)*sizeof(type), alignof(type), data)

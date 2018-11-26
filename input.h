@@ -1,45 +1,6 @@
 #pragma once
 #include "primitives.h"
 
-enum Game_Button : u32
-{
-    BUTTON_A     = 0x1,
-    BUTTON_B     = 0x2,
-    BUTTON_X     = 0x4,
-    BUTTON_Y     = 0x8,
-    MOUSE_LEFT   = 0x10,
-    MOUSE_RIGHT  = 0x20,
-    MOUSE_MIDDLE = 0x40,
-};
-
-enum Game_Axis
-{
-    AXIS_LEFT_X,
-    AXIS_LEFT_Y,
-    AXIS_RIGHT_X,
-    AXIS_RIGHT_Y,
-    AXIS_NUM_
-};
-
-struct Game_Mouse_State
-{
-    u32 buttons = 0; // TODO
-    u32 x = 0;
-    u32 y = 0;
-
-    b32 dragging = false;
-    s32 xDrag = 0;
-    s32 yDrag = 0;
-};
-
-struct Game_Controller_State
-{
-    u32 buttons = 0;
-    float axes[AXIS_NUM_] = { 0.0f };
-};
-
-// @temp: keyboard stuff.
-
 enum Game_Key
 {
     GK_ESCAPE,
@@ -58,13 +19,13 @@ enum Game_Key
 enum Game_Keymod : u8
 {
     GKM_LSHIFT = 0x01,
-    GMK_RSHIFT = 0x02,
+    GKM_RSHIFT = 0x02,
     GKM_LCNTL  = 0x04,
     GKM_RCNTL  = 0x08,
     GKM_LALT   = 0x10,
     GKM_RALT   = 0x20,
 
-    GKM_SHIFT = GKM_LSHIFT | GMK_RSHIFT,
+    GKM_SHIFT = GKM_LSHIFT | GKM_RSHIFT,
     GKM_CNTL  = GKM_LCNTL  | GKM_RCNTL,
     GKM_ALT   = GKM_LALT   | GKM_RALT,
     GKM_CS    = GKM_CNTL   | GKM_SHIFT,
@@ -80,12 +41,55 @@ struct Game_Keyboard_State
     flag8 mod[GK_NUM_];
 };
 
+enum Game_Mouse_Button : u32
+{
+    MOUSE_LEFT   = 0x01,
+    MOUSE_RIGHT  = 0x02,
+    MOUSE_MIDDLE = 0x04,
+};
+
+struct Game_Mouse_State
+{
+    u32 buttons = 0;
+    u32 x = 0;
+    u32 y = 0;
+
+    b32 dragging = false;
+    s32 xDrag = 0;
+    s32 yDrag = 0;
+};
+
 struct Game_Mouse
 {
     Game_Mouse_State cur;
     Game_Mouse_State prev;
 
     b32 drag_started() const { return !prev.dragging && cur.dragging; }
+};
+
+
+enum Game_Controller_Button : u32
+{
+    BUTTON_A     = 0x01,
+    BUTTON_B     = 0x02,
+    BUTTON_X     = 0x04,
+    BUTTON_Y     = 0x08,
+};
+
+enum Game_Axis
+{
+    AXIS_LEFT_X,
+    AXIS_LEFT_Y,
+    AXIS_RIGHT_X,
+    AXIS_RIGHT_Y,
+    AXIS_NUM_
+};
+
+
+struct Game_Controller_State
+{
+    u32 buttons = 0;
+    float axes[AXIS_NUM_] = { 0.0f };
 };
 
 struct Game_Controller

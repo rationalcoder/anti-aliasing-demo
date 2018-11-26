@@ -559,7 +559,9 @@ renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
     if (!load_static_mesh_program(catalog, &renderer->staticMeshProgram)) return false;
 
     if (!load_debug_cube_buffers(&renderer->debugCubeVertexBuffer, &renderer->debugCubeIndexBuffer)) return false;
+#if USING_IMGUI
     if (!load_imgui(&renderer->imgui)) return false;
+#endif
 
     // NOTE(blake): you _need_ to specify the blend equation/func.
     glEnable(GL_BLEND);
@@ -579,7 +581,6 @@ extern void
 renderer_begin_frame(Memory_Arena* workspace, void* commands, u32 count)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
-    (void)renderer;
 
     Render_Command_Header* header = (Render_Command_Header*)commands;
     for (u32 i = 0; i < count; i++, header = next_header(header, header->size)) {
@@ -614,7 +615,6 @@ extern b32
 renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
-    (void)renderer;
 
     renderer->pointLight = nullptr;
 
@@ -750,7 +750,11 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
 {
     // TODO: framebuffer business.
 
-    // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer      coordinates)
+#if !USING_IMGUI
+    return;
+#endif
+
+    // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
     ImGuiIO& io  = ImGui::GetIO();
     int fbWidth  = (int)(drawData->DisplaySize.x * io.DisplayFramebufferScale.x);
     int fbHeight = (int)(drawData->DisplaySize.y * io.DisplayFramebufferScale.y);
@@ -778,6 +782,13 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
 
     glBindVertexArray(imgui.vao);
 
+    glBindBuffer(GL_ARRAY_BUFFER, imgui.vertexBuffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, imgui.indexBuffer);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT,         GL_FALSE, sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, pos));
+    glVertexAttribPointer(1, 2, GL_FLOAT,         GL_FALSE, sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, uv));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, col));
+
     // TODO: Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled
     // TODO: Setup viewport using draw_data->DisplaySize
     // TODO: Setup orthographic projection matrix cover draw_data->DisplayPos to draw_data->DisplayPos + draw_data->DisplaySize
@@ -787,14 +798,8 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
         const ImDrawVert* vertexBuffer = cmdList->VtxBuffer.Data;
         const ImDrawIdx*  indexBuffer  = cmdList->IdxBuffer.Data;
 
-        glBindBuffer(GL_ARRAY_BUFFER, imgui.vertexBuffer);
         glBufferData(GL_ARRAY_BUFFER, cmdList->VtxBuffer.Size * sizeof(ImDrawVert), vertexBuffer, GL_STREAM_DRAW);
-        glVertexAttribPointer(0, 2, GL_FLOAT,         GL_FALSE, sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, pos));
-        glVertexAttribPointer(1, 2, GL_FLOAT,         GL_FALSE, sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, uv));
-        glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, col));
-
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, imgui.indexBuffer);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, cmdList->IdxBuffer.Size * sizeof(ImDrawVert), indexBuffer, GL_STREAM_DRAW);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx), indexBuffer, GL_STREAM_DRAW);
 
         const ImDrawIdx* indexBufferOffset = 0;
 
@@ -818,12 +823,12 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
                     //   However, in the interest of supporting multi-viewport applications in the future (see 'viewport' branch on github),
                     //   always subtract draw_data->DisplayPos from clipping bounds to convert them to your viewport space.
                     // - Note that pcmd->ClipRect contains Min+Max bounds. Some graphics API may use Min+Max, other may use Min+Size (size being Max-Min)
-                    glScissor((int)(cmd->ClipRect.x - topLeft.x), (int)(cmd->ClipRect.y - topLeft.y), (int)(cmd->ClipRect.z - topLeft.x), (int)(cmd->ClipRect.w - topLeft.y));
+                    glScissor((int)cmd->ClipRect.x, (int)(fbHeight - cmd->ClipRect.w),
+                              (int)(cmd->ClipRect.z - cmd->ClipRect.x), (int)(cmd->ClipRect.w - cmd->ClipRect.y));
 
                     // Render 'pcmd->ElemCount/3' indexed triangles.
                     // By default the indices ImDrawIdx are 16-bits, you can change them to 32-bits in imconfig.h if your engine doesn't support 16-bits indices.
                     constexpr GLenum kIndexType = sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
-                    //glDrawElements(GL_TRIANGLES, cmd->ElemCount, kIndexType, (void*)(umm)indexBufferOffset);
                     glDrawElements(GL_TRIANGLES, cmd->ElemCount, kIndexType, indexBufferOffset);
                 }
             }
@@ -842,4 +847,40 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glDisable(GL_SCISSOR_TEST);
+}
+
+// AA Demo
+
+static inline b32
+allocate_msaa_pass()
+{
+}
+
+static inline b32
+free_msaa_pass()
+{
+}
+
+extern void
+renderer_demo_aa(Memory_Arena* ws, Game_Resolution res, AA_Technique technique,
+                 void* beginCommands, u32 beginCount,
+                 void* execCommands, u32 execCount,
+                 struct ImDrawData* endFrameDrawData)
+{
+    OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
+
+    renderer_begin_frame(ws, beginCommands, beginCount);
+    renderer_exec(ws, execCommands, execCount);
+    renderer_end_frame(ws, endFrameDrawData);
+
+    //renderer->runningAADemo = true;
+}
+
+extern void
+renderer_stop_aa_demo(Memory_Arena* ws)
+{
+    OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
+
+    // TODO: free framebuffers
+    //renderer->runningAADemo = false;
 }

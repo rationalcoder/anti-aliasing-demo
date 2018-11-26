@@ -15,16 +15,22 @@
 #include <cassert>
 #include <cstdio>
 
+
 struct Win32_Mouse_State
 {
-    u32 x = 0;
-    u32 y = 0;
-    s32 xDragAccum = 0;
-    s32 yDragAccum = 0;
-    u32 dragStartX = 0;
-    u32 dragStartY = 0;
-    b32 dragging = false;
-    b32 ignoreNextMouseMove = false;
+    s32 x = 0;
+    s32 y = 0;
+    u32 buttons = 0;
+    float mouseWheel = 0;
+    float mouseHWheel = 0;
+    b32 leave = false;
+};
+
+struct Win32_Keyboard_State
+{
+    bool keys[512]       = {};
+    u16  textInput[16+1] = {};
+    u8   textSize        = 0;
 };
 
 struct Win32_State
@@ -34,30 +40,59 @@ struct Win32_State
     u32 coreCount = 2;
 
     Game* game = NULL;
-    HWND hwnd  = NULL;
-    HDC dc     = NULL;
+    HWND  hwnd = NULL;
+    HDC   dc   = NULL;
     HGLRC glrc = NULL;
 
     HANDLE console = INVALID_HANDLE_VALUE;
 
+    LARGE_INTEGER frequency = {};
+    LARGE_INTEGER imguiPrev = {};
+
     Win32_Mouse_State mouse;
+    Win32_Mouse_State prevMouse;
+
+    s32 dragStartX = 0;
+    s32 dragStartY = 0;
+    b32 dragging   = false;
+
+    Win32_Keyboard_State keyboard;
+    Win32_Keyboard_State prevKeyboard;
+
+    // NOTE(blake): latest WM_SIZE information so we can only call game_resize once after
+    // all events have been handled for a frame. Otherwise, draging the window
+    // around enough will spam game_resize. In the current implementation of that, that
+    // overflows a render command buffer. That probably won't be true forever, but this is
+    // still the sane way to go until resizing the window doesn't block.
+    //
+    Game_Resolution latestClientRes;
 
     Game_Resolution clientRes;
     u32 xCenter = 0;
     u32 yCenter = 0;
 
-    b32 shouldQuit   = false;
-    b32 fillingImgui = false;
+    b32 shouldQuit = false;
 };
 
 struct Win32_Window_Position
 {
-    int x = 0;
-    int y = 0;
+    s32 x = 0;
+    s32 y = 0;
 };
 
 // global so that the WinProc can access it.
 static Win32_State gWin32State;
+
+static inline void
+win32_add_input_character(Win32_State* state, u16 c)
+{
+    u8 size = state->keyboard.textSize;
+    if (size + 1 < ArraySize(state->keyboard.textInput)) {
+        state->keyboard.textInput[size]     = c;
+        state->keyboard.textInput[size + 1] = '\0';
+        state->keyboard.textSize++;
+    }
+}
 
 static inline void
 win32_swap_buffers(Win32_State* state)
@@ -80,7 +115,7 @@ win32_game_key_down(Game_Key key, bit32* keys, flag8* modStates)
     if (GetKeyState(VK_LCONTROL) & 0x8000) modStates[key] |= GKM_LCNTL;
     if (GetKeyState(VK_RMENU)    & 0x8000) modStates[key] |= GKM_RALT;
     if (GetKeyState(VK_LMENU)    & 0x8000) modStates[key] |= GKM_LALT;
-    if (GetKeyState(VK_RSHIFT)   & 0x8000) modStates[key] |= GMK_RSHIFT;
+    if (GetKeyState(VK_RSHIFT)   & 0x8000) modStates[key] |= GKM_RSHIFT;
     if (GetKeyState(VK_LSHIFT)   & 0x8000) modStates[key] |= GKM_LSHIFT;
 }
 
@@ -101,23 +136,58 @@ win32_center_cursor()
     return point;
 }
 
+static inline bool
+win32_handle_non_input_events(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, LRESULT* result)
+{
+    UNREFERENCED_PARAMETER(hWnd);
+    UNREFERENCED_PARAMETER(wParam);
+
+    switch (message) {
+    case WM_CLOSE:
+        gWin32State.shouldQuit = true;
+        *result = 0;
+        return true;
+    case WM_DESTROY:
+        gWin32State.shouldQuit = true;
+        PostQuitMessage(0);
+        *result = 0;
+        return true;
+    case WM_SIZE: {
+        // NOTE: only resize the game if the resolution has actually changed.
+        // Otherwise, we will end up creating all FBO's twice on init.
+        // The game is responsible for deciding when to actually resize buffers.
+        // It might need pixel-perfect resize informatin for mouse interactions.
+
+        u32 w = LOWORD(lParam);
+        u32 h = HIWORD(lParam);
+
+        gWin32State.latestClientRes.w  = w;
+        gWin32State.latestClientRes.h  = h;
+
+        *result = 0;
+        return true;
+    }
+    default: break;
+    }
+
+    return false;
+}
+
 LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 static LRESULT CALLBACK
 win32_event_callback(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    // NOTE(blake): right now, our handling of mouse/keyboard events is so different from what
-    // imgui wants, I am just processing all events twice: once through imgui to set its state
-    // and see what events we should ignore, and once through our normal event handler.
-    if (gWin32State.fillingImgui) {
-        ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam);
-        return 0;
-    }
+#if 0 // Old using imgui implementation
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam))
+        return 1;
 
-    Game_Input* input = &gWin32State.game->input;
-    bit32* keys = &input->keyboard.cur.keys;
-    flag8* mod  = input->keyboard.cur.mod;
+    LRESULT result = 0;
+    if (win32_handle_non_input_events(hwnd, message, wParam, lParam, &result))
+        return result;
 
+    return DefWindowProcA(hwnd, message, wParam, lParam);
+#else
     Win32_Mouse_State& mouse = gWin32State.mouse;
 
     // NOTE: these are useful if we actually want modifier keys on their own.
@@ -141,171 +211,234 @@ win32_event_callback(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
         u32 w = LOWORD(lParam);
         u32 h = HIWORD(lParam);
 
-        Game_Resolution* oldResolution = &gWin32State.clientRes;
-        if (oldResolution->w != w || oldResolution->h != h) {
-            game_resize({w, h});
-
-            gWin32State.clientRes.w = w;
-            gWin32State.clientRes.h = h;
-            gWin32State.xCenter = w/2;
-            gWin32State.yCenter = h/2;
-        }
+        gWin32State.latestClientRes.w  = w;
+        gWin32State.latestClientRes.h  = h;
 
         return 0;
     }
+    case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN: {
-        mouse.dragging   = true;
-        mouse.dragStartX = GET_X_LPARAM(lParam);
-        mouse.dragStartY = GET_Y_LPARAM(lParam);
+        u32 button = 0;
+        if (message == WM_LBUTTONDOWN) button = MOUSE_LEFT;
+        if (message == WM_RBUTTONDOWN) button = MOUSE_RIGHT;
+        if (!mouse.buttons && ::GetCapture() == NULL)
+            SetCapture(hwnd);
 
-        mouse.x = gWin32State.xCenter;
-        mouse.y = gWin32State.yCenter;
-        mouse.ignoreNextMouseMove = true;
-        win32_center_cursor();
-
-        ShowCursor(FALSE);
-        SetCapture(hwnd);
+        mouse.buttons |= button;
         return 0;
     }
+    case WM_LBUTTONUP:
     case WM_RBUTTONUP: {
-        mouse.dragging = false;
-
-        POINT p = { down_cast<LONG>(mouse.dragStartX), down_cast<LONG>(mouse.dragStartY) };
-        ClientToScreen(hwnd, &p);
-        SetCursorPos(p.x, p.y);
-
-        ShowCursor(TRUE);
-        ReleaseCapture();
+        u32 button = 0;
+        if (message == WM_LBUTTONUP) button = MOUSE_LEFT;
+        if (message == WM_RBUTTONUP) button = MOUSE_RIGHT;
+        mouse.buttons &= ~button;
+        if (!mouse.buttons && GetCapture() == hwnd)
+            ReleaseCapture();
         return 0;
     }
     case WM_MOUSELEAVE: {
-        mouse.dragging = false;
-        ShowCursor(TRUE);
+        mouse.leave = true;
         return 0;
     }
-    case WM_MOUSEMOVE: {
-        if (mouse.ignoreNextMouseMove) {
-            mouse.ignoreNextMouseMove = false;
-            return 0;
-        }
-
-        POINTS pos = MAKEPOINTS(lParam);
-
-        if (mouse.dragging) {
-            mouse.xDragAccum += pos.x - gWin32State.xCenter;
-            mouse.yDragAccum += gWin32State.yCenter - pos.y;
-            mouse.ignoreNextMouseMove = true;
-            win32_center_cursor();
-        }
-        else {
-            mouse.x = pos.x;
-            mouse.y = pos.y;
-        }
-
+    case WM_MOUSEWHEEL:
+        mouse.mouseWheel += (float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA;
         return 0;
-    }
     case WM_SYSKEYDOWN:
     case WM_KEYDOWN:
-        switch (wParam) {
-        case VK_ESCAPE: win32_game_key_down(GK_ESCAPE, keys, mod); break;
-        case 'W':       win32_game_key_down(GK_W,      keys, mod); break;
-        case 'A':       win32_game_key_down(GK_A,      keys, mod); break;
-        case 'S':       win32_game_key_down(GK_S,      keys, mod); break;
-        case 'D':       win32_game_key_down(GK_D,      keys, mod); break;
-        case 'E':       win32_game_key_down(GK_E,      keys, mod); break;
-        case '1':       win32_game_key_down(GK_1,      keys, mod); break;
-        case '2':       win32_game_key_down(GK_2,      keys, mod); break;
-        case '3':       win32_game_key_down(GK_3,      keys, mod); break;
-        case '4':       win32_game_key_down(GK_4,      keys, mod); break;
-        default: break;
-        }
-
-        // NOTE: enable to allow windows to handle hotkeys.
-#if 1
-        if (message == WM_SYSKEYDOWN) break;
-        else return 0;
-#else
+        if (wParam < 256) gWin32State.keyboard.keys[wParam] = 1;
         return 0;
-#endif
-
     case WM_SYSKEYUP:
     case WM_KEYUP:
-        switch (wParam) {
-        case VK_ESCAPE: win32_game_key_up(GK_ESCAPE, keys, mod); break;
-        case 'W':       win32_game_key_up(GK_W,      keys, mod); break;
-        case 'A':       win32_game_key_up(GK_A,      keys, mod); break;
-        case 'S':       win32_game_key_up(GK_S,      keys, mod); break;
-        case 'D':       win32_game_key_up(GK_D,      keys, mod); break;
-        case 'E':       win32_game_key_up(GK_E,      keys, mod); break;
-        case '1':       win32_game_key_up(GK_1,      keys, mod); break;
-        case '2':       win32_game_key_up(GK_2,      keys, mod); break;
-        case '3':       win32_game_key_up(GK_3,      keys, mod); break;
-        case '4':       win32_game_key_up(GK_4,      keys, mod); break;
-        default: break;
-        }
-
-#if 1
-        if (message == WM_SYSKEYUP) break;
-        else return 0;
-#else
+        if (wParam < 256) gWin32State.keyboard.keys[wParam] = 0;
         return 0;
-#endif
-
+    case WM_CHAR:
+        // You can also use ToAscii()+GetKeyboardState() to retrieve characters.
+        if (wParam > 0 && wParam < 0x10000)
+            win32_add_input_character(&gWin32State, (u16)wParam);
+        return 0;
     default:
         break;
     }
 
     return DefWindowProcA(hwnd, message, wParam, lParam);
+#endif
 }
-
-#define WM_EVENTS_END_MARKER (WM_USER + 0x0001)
 
 static inline void
 win32_poll_events(Win32_State* state)
 {
-    Game_Input* input = &gWin32State.game->input;
-    input->controller.prev = input->controller.cur;
-    input->keyboard.prev   = input->keyboard.cur;
-    input->mouse.prev      = input->mouse.cur;
-
-    state->mouse.xDragAccum = 0;
-    state->mouse.yDragAccum = 0;
-
-#if 1
-    if (!state->mouse.dragging) {
-        state->fillingImgui = true;
-
-        PostMessageA(state->hwnd, WM_EVENTS_END_MARKER, 0, 0);
-
-        MSG msg;
-        while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_EVENTS_END_MARKER)
-                break;
-
-            TranslateMessage(&msg);
-            DispatchMessageA(&msg);
-            PostMessageA(state->hwnd, msg.message, msg.wParam, msg.lParam);
-        }
-
-        state->fillingImgui = false;
-    }
-#endif
-
     MSG msg;
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
 
-    Game_Mouse_State& gameMouse = input->mouse.cur;
-    gameMouse.x = state->mouse.x;
-    gameMouse.y = state->mouse.y;
-
-    gameMouse.dragging = state->mouse.dragging;
-    gameMouse.xDrag = state->mouse.xDragAccum;
-    gameMouse.yDrag = state->mouse.yDragAccum;
-
     win32_poll_xinput(state);
+}
+
+static inline b32
+win32_mouse_button_pressed(Win32_State* state, u32 button)
+{
+    return !(state->prevMouse.buttons & button) && (state->mouse.buttons & button);
+}
+
+static inline b32
+win32_mouse_button_released(Win32_State* state, u32 button)
+{
+    return (state->prevMouse.buttons & button) && !(state->mouse.buttons & button);
+}
+
+static inline void
+win32_new_frame(Win32_State* state)
+{
+    state->prevMouse    = state->mouse;
+    state->prevKeyboard = state->keyboard;
+
+    state->mouse.mouseWheel  = 0;
+    state->mouse.mouseHWheel = 0;
+    state->mouse.leave = false;
+
+    // @BugProne
+    //memset(state->keyboard.keys,      0, sizeof(state->keyboard.keys));
+    memset(state->keyboard.textInput, 0, sizeof(state->keyboard.textInput));
+    state->keyboard.textSize = 0;
+
+
+    win32_poll_events(state);
+
+    Game_Resolution& oldResolution = state->clientRes;
+    Game_Resolution  curResolution = state->latestClientRes;
+    if (oldResolution != curResolution) {
+        game_resize(curResolution);
+
+        state->clientRes = curResolution;
+        state->xCenter   = curResolution.w/2;
+        state->yCenter   = curResolution.h/2;
+    }
+
+    Win32_Mouse_State&    mouse    = state->mouse;
+    Win32_Keyboard_State& keyboard = state->keyboard;
+
+    POINT p = {};
+    GetCursorPos(&p);
+    ScreenToClient(state->hwnd, &p);
+
+    mouse.x = p.x;
+    mouse.y = p.y;
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    // imgui stuff that we want to fill out regardless.
+    io.MousePos      = ImVec2(-FLT_MAX, -FLT_MAX);
+    io.DisplaySize.x = (float)curResolution.w;
+    io.DisplaySize.y = (float)curResolution.h;
+
+    LARGE_INTEGER now;;
+    QueryPerformanceCounter(&now);
+
+    LARGE_INTEGER elapsed;
+    elapsed.QuadPart = now.QuadPart - state->imguiPrev.QuadPart;
+    elapsed.QuadPart *= 1000000;
+    elapsed.QuadPart /= state->frequency.QuadPart;
+    io.DeltaTime = elapsed.QuadPart/1000000.0f;
+    state->imguiPrev = now;
+
+
+    bool lcontrol = GetKeyState(VK_LCONTROL) & 0x8000;
+    bool rcontrol = GetKeyState(VK_RCONTROL) & 0x8000;
+    bool lshift   = GetKeyState(VK_LSHIFT)   & 0x8000;
+    bool rshift   = GetKeyState(VK_RSHIFT)   & 0x8000;
+    bool lalt     = GetKeyState(VK_LMENU)    & 0x8000;
+    bool ralt     = GetKeyState(VK_RMENU)    & 0x8000;
+
+    io.ClearInputCharacters();
+
+    if (!state->dragging) {
+        io.MousePos     = ImVec2((f32)mouse.x, (f32)mouse.y);
+        io.MouseDown[0] = mouse.buttons & MOUSE_LEFT;
+        io.MouseDown[1] = mouse.buttons & MOUSE_RIGHT;
+        io.MouseDown[2] = mouse.buttons & MOUSE_MIDDLE;
+        io.MouseWheel   = mouse.mouseWheel;
+        io.MouseWheelH  = mouse.mouseHWheel;
+        io.KeyCtrl  = lcontrol || rcontrol;
+        io.KeyShift = lshift   || rshift;
+        io.KeyAlt   = lalt     || rshift;
+        io.KeySuper = false;
+        memcpy(io.InputCharacters, keyboard.textInput, sizeof(keyboard.textInput));
+        memcpy(io.KeysDown,        keyboard.keys,      sizeof(keyboard.keys));
+    }
+
+    // ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    Game_Mouse&    gameMouse    = state->game->input.mouse;
+    Game_Keyboard& gameKeyboard = state->game->input.keyboard;
+
+    gameMouse.prev    = gameMouse.cur;
+    gameKeyboard.prev = gameKeyboard.cur;
+
+    if (!io.WantCaptureMouse) {
+        if (mouse.leave) SetCursor(LoadCursorA(NULL, IDC_ARROW));
+
+        if (win32_mouse_button_pressed(state, MOUSE_RIGHT)) {
+            state->dragStartX = mouse.x;
+            state->dragStartY = mouse.y;
+
+            SetCursor(NULL);
+            win32_center_cursor();
+
+            mouse.x = state->xCenter;
+            mouse.y = state->yCenter;
+            state->dragging = true;
+        }
+        else if (win32_mouse_button_released(state, MOUSE_RIGHT) && state->dragging) {
+            POINT p = { state->dragStartX, state->dragStartY };
+            ClientToScreen(state->hwnd, &p);
+            SetCursorPos(p.x, p.y);
+            SetCursor(LoadCursorA(NULL, IDC_ARROW));
+
+            state->dragging = false;
+        }
+
+        gameMouse.cur.buttons  = 0;
+        gameMouse.cur.dragging = state->dragging;
+        gameMouse.cur.x        = mouse.x;
+        gameMouse.cur.y        = mouse.y;
+        gameMouse.cur.xDrag    = mouse.x - state->xCenter;
+        gameMouse.cur.yDrag    = state->yCenter - mouse.y;
+
+        if (state->dragging)
+            win32_center_cursor();
+    }
+
+    bit32& keys = gameKeyboard.cur.keys;
+    flag8* mod  = gameKeyboard.cur.mod;
+
+    keys.clear();
+    memset(mod, 0, sizeof(gameKeyboard.cur.mod));
+
+    if (!io.WantCaptureKeyboard) {
+        flag8 repeatedMod = 0;
+        if (lcontrol) repeatedMod |= GKM_LCNTL;
+        if (rcontrol) repeatedMod |= GKM_RCNTL;
+        if (lshift)   repeatedMod |= GKM_LCNTL;
+        if (ralt)     repeatedMod |= GKM_RALT;
+        if (lalt)     repeatedMod |= GKM_LALT;
+
+        // @BugProne
+        memset(mod, repeatedMod, sizeof(gameKeyboard.cur.mod));
+        if (keyboard.keys[VK_ESCAPE]) keys.set(GK_ESCAPE);
+        if (keyboard.keys['W'])       keys.set(GK_W);
+        if (keyboard.keys['A'])       keys.set(GK_A);
+        if (keyboard.keys['S'])       keys.set(GK_S);
+        if (keyboard.keys['D'])       keys.set(GK_D);
+        if (keyboard.keys['E'])       keys.set(GK_E);
+        if (keyboard.keys['1'])       keys.set(GK_1);
+        if (keyboard.keys['2'])       keys.set(GK_2);
+        if (keyboard.keys['3'])       keys.set(GK_3);
+        if (keyboard.keys['4'])       keys.set(GK_4);
+    }
 }
 
 static inline void
@@ -313,37 +446,30 @@ win32_imgui_init(Win32_State* state)
 {
     ImGui::CreateContext();
     ImGui_ImplWin32_Init(state->hwnd);
-    ImGui::StyleColorsDark();
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.ConfigResizeWindowsFromEdges = true;
+
+    ImGui::StyleColorsDark(0);
 
     // NOTE(blake): initting imgui is done in game_init() so we can do it after renderer_init().
 }
 
-static inline void
-win32_imgui_new_frame(Win32_State* win32State)
-{
-    win32_poll_events(win32State);
-    ImGui_ImplWin32_NewFrame();
-    ImGui::NewFrame();
-}
-
 static void 
-win32_game_loop(Win32_State* win32State)
+win32_game_loop(Win32_State* state)
 {
-    LARGE_INTEGER frequency;
-    QueryPerformanceFrequency(&frequency);
-
     LARGE_INTEGER prev;
     QueryPerformanceCounter(&prev);
 
     LARGE_INTEGER soundPrev = prev;
+    state->imguiPrev        = prev;
 
     u32 lagMicro  = 0;
     u32 stepMicro = us_per_update();
 
     b32 firstFrame = true;
-
     for (;;) {
-        win32_imgui_new_frame(win32State);
+        win32_new_frame(state);
 
         LARGE_INTEGER current;
         QueryPerformanceCounter(&current);
@@ -351,7 +477,7 @@ win32_game_loop(Win32_State* win32State)
         LARGE_INTEGER elapsed;
         elapsed.QuadPart = current.QuadPart - prev.QuadPart;
         elapsed.QuadPart *= 1000000;
-        elapsed.QuadPart /= frequency.QuadPart;
+        elapsed.QuadPart /= state->frequency.QuadPart;
 
         prev      = current;
         lagMicro += (u32)elapsed.QuadPart;
@@ -359,7 +485,7 @@ win32_game_loop(Win32_State* win32State)
         f32 dt = lagMicro/1000000.0f;
 
         game_update(dt);
-        if (win32State->shouldQuit || gGame->shouldQuit)
+        if (state->shouldQuit || gGame->shouldQuit)
             return;
 
         // Make sure that the first frame average isn't bogus, not that it really matters.
@@ -378,19 +504,24 @@ win32_game_loop(Win32_State* win32State)
         LARGE_INTEGER soundElapsed;
         soundElapsed.QuadPart = soundCurrent.QuadPart - soundPrev.QuadPart;
         soundElapsed.QuadPart *= 1000000;
-        soundElapsed.QuadPart /= frequency.QuadPart;
+        soundElapsed.QuadPart /= state->frequency.QuadPart;
 
         soundPrev = soundCurrent;
         game_play_sound(soundElapsed.QuadPart);
 
+#if USING_IMGUI
         ImGui::Render();
 
         if (should_step()) { game_render(lagMicro/(f32)stepMicro, ImGui::GetDrawData()); }
         else               { game_render(1, ImGui::GetDrawData()); }
+#else
+        if (should_step()) { game_render(lagMicro/(f32)stepMicro, nullptr); }
+        else               { game_render(1, nullptr); }
+#endif
 
         game_end_frame();
 
-        win32_swap_buffers(win32State);
+        win32_swap_buffers(state);
     }
 }
 
@@ -543,7 +674,8 @@ win32_create_opengl_window(Win32_State* state, HINSTANCE instance, int w, int h)
 
     // TODO: check for multisampling extension.
     // TODO: check for WGL_ARB_create_context_profile
-    // NOTE: there is almost no chance that these won't be present.
+    // NOTE: there is almost no chance that the above won't be present.
+    // TODO: check for WGL_EXT_swap_control_tear
 
     // Done with the fake context. Close the old window, and make a new one with the
     // right opengl settings.
@@ -594,7 +726,7 @@ win32_create_opengl_window(Win32_State* state, HINSTANCE instance, int w, int h)
 
     state->glrc = glrc;
     wglMakeCurrent(state->dc, glrc);
-    wglSwapIntervalEXT(1);
+    wglSwapIntervalEXT(-1);
 
     return true;
 }
@@ -749,8 +881,12 @@ win32_init(Win32_State* state, Platform* platformOut, Game_Memory* memoryOut,
     SYSTEM_INFO sysInfo;
     GetSystemInfo(&sysInfo);
 
+    LARGE_INTEGER frequency = {};
+    QueryPerformanceFrequency(&frequency);
+
     state->pageSize  = sysInfo.dwPageSize;
     state->coreCount = sysInfo.dwNumberOfProcessors;
+    state->frequency = frequency;
 
     win32_setup_console(state);
     win32_register_window_classes(instance);

@@ -2129,8 +2129,8 @@ static void ShowDemoWindowColumns()
         {
             char label[32];
             sprintf(label, "Item %d", n);
-            if (ImGui::Selectable(label)) {}
-            //if (ImGui::Button(label, ImVec2(-1,0))) {}
+            //if (ImGui::Selectable(label)) {}
+            if (ImGui::Button(label, ImVec2(-1,0))) {}
             ImGui::NextColumn();
         }
         ImGui::Columns(1);

@@ -3,6 +3,7 @@
 #include "common.h"
 #include "primitives.h"
 #include "tanks.h"
+#include "stb_sprintf.h"
 
 // NOTE(blake): until operator [] is force inlined, access in here will be buffer.data[i], since
 // having to step through an extra function like that in the debugger is stupid.
@@ -28,14 +29,56 @@ operator == (buffer32 buffer, const char* str)
     return true;
 }
 
-inline b32 operator != (buffer32 lhs, buffer32 rhs) { return !(lhs == rhs); }
-inline b32 operator != (buffer32 buffer, char c) { return !(buffer == c); }
+inline b32 operator != (buffer32 lhs, buffer32 rhs)       { return !(lhs == rhs); }
+inline b32 operator != (buffer32 buffer, char c)          { return !(buffer == c); }
 inline b32 operator != (buffer32 buffer, const char* str) { return !(buffer == str); }
+
+
+extern inline char*
+push_stbsp_temp_storage(char* /*str*/, void* /*userData*/, int len)
+{
+    if (len < STB_SPRINTF_MIN) return NULL;
+
+    return temp_bytes(STB_SPRINTF_MIN);
+}
+
+inline char*
+fmt_cstr(const char* fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+
+    char* buffer = push_stbsp_temp_storage(NULL, NULL, STB_SPRINTF_MIN);
+    s32   n      = stbsp_vsprintfcb(push_stbsp_temp_storage, nullptr, buffer, fmt, va);
+    // NOTE(bmartin): push an extra byte to be sure we can always assign
+    // a nul at the end of the buffer.This works b/c temp memory is contiguous.
+    //
+    temp_bytes(1);
+    buffer[n] = '\0';
+
+    va_end(va);
+
+    return buffer;
+}
+
+inline buffer32
+fmt_str(const char* fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+
+    char* buffer = push_stbsp_temp_storage(NULL, NULL, STB_SPRINTF_MIN);
+    s32 written  = stbsp_vsprintfcb(push_stbsp_temp_storage, nullptr, buffer, fmt, va);
+
+    va_end(va);
+
+    return buffer32((u8*)buffer, (u32)written);
+}
 
 inline char*
 cstr(buffer32 b)
 {
-    char* bytes = temp_allocate_bytes(b.size + 1);
+    char* bytes = temp_bytes(b.size + 1);
     memcpy(bytes, b.data, b.size);
 
     bytes[b.size] = '\0';
@@ -48,7 +91,7 @@ cat(buffer32 a, buffer32 b)
     buffer32 result(uninitialized);
 
     u32 size = a.size + b.size;
-    result.data = (u8*)temp_allocate_bytes(size);
+    result.data = (u8*)temp_bytes(size);
     result.size = size;
 
     memcpy(result.data, a.data, a.size);
@@ -64,7 +107,7 @@ cat(const char* a, buffer32 b)
 
     u32 aSize = (u32)strlen(a);
     u32 size  = aSize + b.size;
-    result.data = (u8*)temp_allocate_bytes(size);
+    result.data = (u8*)temp_bytes(size);
     result.size = size;
 
     memcpy(result.data, a, aSize);
@@ -90,7 +133,7 @@ cstr_line(buffer32 b)
     for (u32 i = 0; i < b.size; i++) {
         if (b.data[i] == '\n') {
             u32 size = i + 1;
-            char* s = temp_allocate_bytes(size + 1);
+            char* s = temp_bytes(size + 1);
             memcpy(s, b.data, size);
 
             s[size] = '\0';

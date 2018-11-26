@@ -10,6 +10,10 @@
 #include "opengl_renderer.cpp"
 #include "obj_file.cpp"
 
+// @CRT @Dependency
+#include <math.h>
+#include <time.h>
+
 // All globals:
 
 Platform*    gPlatform = nullptr;
@@ -126,6 +130,12 @@ setup_test_scene()
     }
 }
 
+static inline void
+init_aa_demo(AA_Demo& demo)
+{
+    demo.res = gGame->closestRes;
+}
+
 extern b32
 game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes)
 {
@@ -151,6 +161,7 @@ game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes)
     gGame->targetRenderCommandBuffer = &gGame->frameBeginCommands;
 
     setup_test_scene();
+    init_aa_demo(gGame->demo);
     return true;
 }
 
@@ -162,10 +173,110 @@ game_patch_after_hotload(Game_Memory* memory, Platform* platform)
     gPlatform = platform;
 }
 
-static inline f32
-map_bilateral(s32 val, u32 range)
+static inline void
+pick_technique_set(AA_Demo& demo)
 {
-    return val/(range/2.0f);
+    // We need the options to be different per person.
+    srand((u32)time(NULL));
+
+    demo.catalogOffset = rand() % AA_COUNT_;
+
+    u32 offset = demo.catalogOffset;
+    for (u32 i = 0; i < AA_COUNT_; i++, right_rotate_value(offset, 1, AA_COUNT_-1)) {
+        demo.curTechniques[i] = demo.techniqueCatalog[offset];
+        //log_debug("Tech: %s\n", cstr(demo.curTechniques[i]));
+    }
+}
+
+static inline void
+save_demo_results(AA_Demo& demo)
+{
+}
+
+static inline void
+start_new_demo(AA_Demo& demo)
+{
+    pick_technique_set(demo);
+
+    demo.chosenCount = 0;
+    demo.selectedTechnique = AA_INVALID;
+    memset(demo.euid,             0, sizeof(demo.euid));
+    memset(demo.chosenTechniques, 0, sizeof(demo.chosenTechniques));
+}
+
+
+static void
+update_aa_demo(AA_Demo& demo)
+{
+    ImGui::SetNextWindowSize(v2(150, 370), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(v2(5, 5), ImGuiCond_FirstUseEver);
+
+    ImGui::Begin("AA Demo", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                                     ImGuiWindowFlags_NoResize);
+
+    if (!demo.on) {
+        if (ImGui::Button("Start Demo", v2(-1, 0))) {
+            pick_technique_set(demo);
+            demo.on = true;
+        }
+    }
+    else {
+        if (ImGui::Button("Back", v2(-1, 0)))
+            demo.on = false;
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        for (int i = 0; i < ArraySize(demo.curTechniques); i++) {
+            if (demo.curTechniques[i] == AA_INVALID) continue;
+            ImGui::PushID(i);
+
+            if (ImGui::Button(fmt_cstr("AA %d", i), v2(-40, 0)))
+                demo.selectedTechnique = demo.curTechniques[i];
+
+            ImGui::SameLine(0, 5);
+
+            if (ImGui::Button("Best", v2(-1, 0))) {
+                log_debug("Best: %d\n", i);
+                demo.curTechniques[i] = AA_INVALID;
+                demo.chosenTechniques[demo.chosenCount] = demo.curTechniques[i];
+                demo.chosenCount++;
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        b32 submitted = false;
+        if (ImGui::InputText("EUID", demo.euid, ArraySize(demo.euid), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            submitted = true;
+        }
+
+        ImGui::Spacing();
+
+        if (ImGui::Button("Sumbit", v2(-1, 0))) {
+            log_debug("EUID: %s\n", demo.euid);
+            submitted = true;
+        }
+
+        if (submitted) {
+            save_demo_results(demo);
+            start_new_demo(demo);
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (ImGui::Button("Reset", v2(-1, 0)))
+            start_new_demo(demo);
+    }
+
+    ImGui::End();
+    // ImGui::ShowDemoWindow();
 }
 
 extern void
@@ -176,7 +287,11 @@ game_update(f32 dt)
         gGame->shouldQuit = true;
     }
 
-    f32 camSpeed = 3*dt; // XXX
+    update_aa_demo(gGame->demo);
+    if (gGame->demo.on) return;
+
+
+    f32 camSpeed = 3 * dt; // XXX
     Camera& camera = gGame->camera;
 
     f32 up      = 0;
@@ -198,7 +313,6 @@ game_update(f32 dt)
         camera.right_by(movement.y);
         camera.forward_by(movement.z);
     }
-
 
     Game_Mouse& mouse = gGame->input.mouse;
     Game_Mouse_State& curMouse = gGame->input.mouse.cur;
@@ -224,20 +338,17 @@ game_update(f32 dt)
     camera.up = v3(0.0f, 0.0f, 1.0f);
 
     // log_debug("FPS: %f %f\n", gGame->frameStats.fps(), dt);
-
-    ImGui::ShowDemoWindow();
 }
 
 extern void
 game_resize(Game_Resolution clientRes)
 {
     Game_Resolution closestResolution = tightest_supported_resolution(clientRes);
-    //printf("Resizing to: %ux%u\n", closestResolution.w, closestResolution.h);
-    // set_viewport(clientRes);
 
     gGame->closestRes = closestResolution;
     gGame->clientRes  = clientRes;
 
+    log_debug("Set Viewport\n");
     set_render_target(gGame->frameBeginCommands);
     cmd_set_viewport(0, 0, clientRes.w, clientRes.h);
 }
@@ -250,17 +361,31 @@ game_play_sound(u64)
 extern void
 game_render(f32 /*frameRatio*/, struct ImDrawData* imguiData)
 {
-    // Render frame local changes like resizes, viewport, etc.
-    set_render_target(gGame->frameBeginCommands);
-    cmd_set_view_matrix(gGame->camera.view_matrix());
+    AA_Demo& demo = gGame->demo;
 
-    renderer_begin_frame(&gGame->rendererWorkspace,
-                         gGame->frameBeginCommands.arena.start,
-                         gGame->frameBeginCommands.count);
+    if (!gGame->demo.on) {
+        // Render frame local changes like resizes, viewport, etc.
+        set_render_target(gGame->frameBeginCommands);
+        cmd_set_view_matrix(gGame->camera.view_matrix());
 
-    render_commands(gGame->residentCommands);
+        renderer_begin_frame(&gGame->rendererWorkspace,
+                             gGame->frameBeginCommands.arena.start,
+                             gGame->frameBeginCommands.count);
 
-    renderer_end_frame(&gGame->rendererWorkspace, imguiData);
+        render_commands(gGame->residentCommands);
+
+        renderer_end_frame(&gGame->rendererWorkspace, imguiData);
+    }
+    else {
+        // Render frame local changes like resizes, viewport, etc.
+        set_render_target(gGame->frameBeginCommands);
+        cmd_set_view_matrix(gGame->camera.view_matrix());
+
+        renderer_demo_aa(&gGame->rendererWorkspace, demo.res,    demo.selectedTechnique,
+                         gGame->frameBeginCommands.arena.start,  gGame->frameBeginCommands.count,
+                         gGame->residentCommands.arena.start,    gGame->residentCommands.count,
+                         imguiData);
+    }
 }
 
 extern void
