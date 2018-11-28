@@ -34,6 +34,7 @@ HEADERS += tanks.h \
     stb_rectpack.h \
     stb_sprintf.h \
     stb_textedit.h \
+    imgui.h \
     imgui_demo.cpp \
     imgui_draw.cpp \
     imgui_widgets.cpp \

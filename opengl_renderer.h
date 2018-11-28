@@ -104,7 +104,7 @@ struct Textured_Quad_Program
 
 struct FXAA_Program
 {
-    GLuint program;
+    GLuint id;
 
     GLint texelStep;
     GLint showEdges;
@@ -196,9 +196,9 @@ Rolling_Cache::evict()
 
 struct ImGui_Program
 {
-    GLuint id              = GL_INVALID_VALUE;
-    GLint projectionMatrix = GL_INVALID_VALUE;
-    GLint texture          = GL_INVALID_VALUE;
+    GLuint id               = GL_INVALID_VALUE;
+    GLint  projectionMatrix = GL_INVALID_VALUE;
+    GLint  texture          = GL_INVALID_VALUE;
 };
 
 struct ImGui_Resources
@@ -211,6 +211,41 @@ struct ImGui_Resources
     GLuint indexBuffer  = GL_INVALID_VALUE;
 };
 
+struct FXAA_Pass
+{
+    GLuint emptyVao    = GL_INVALID_VALUE;
+    //GLuint framebuffer = GL_INVALID_VALUE;
+    //GLuint colorBuffer = GL_INVALID_VALUE;
+    //GLuint depthBuffer = GL_INVALID_VALUE;
+};
+
+struct MSAA_Pass
+{
+    GLuint framebuffer = GL_INVALID_VALUE;
+    GLuint colorBuffer = GL_INVALID_VALUE;
+    GLuint depthBuffer = GL_INVALID_VALUE;
+    u32    sampleCount = 0;
+};
+
+struct Color_Framebuffer
+{
+    GLuint framebuffer = GL_INVALID_VALUE;
+    GLuint colorBuffer = GL_INVALID_VALUE;
+};
+
+struct OpenGL_AA_Demo
+{
+    b32 on     = false;
+
+    FXAA_Pass fxaaPass;
+    MSAA_Pass msaaPass;
+
+    AA_Technique currentTechnique = AA_NONE;
+
+    GLuint finalColorFramebuffers[AA_COUNT_] = {};
+};
+
+
 struct OpenGL_Renderer
 {
     Shader_Catalog shaderCatalog;
@@ -218,6 +253,7 @@ struct OpenGL_Renderer
     Lines_Program linesProgram;
     Cubes_Program cubesProgram;
     Static_Mesh_Program staticMeshProgram;
+    FXAA_Program program;
 
     GLuint debugCubeVertexBuffer = GL_INVALID_VALUE;
     GLuint debugCubeIndexBuffer  = GL_INVALID_VALUE;
@@ -234,8 +270,9 @@ struct OpenGL_Renderer
     // TODO(blake): more lights! Light groups!
     struct Render_Point_Light* pointLight;
 
-    b32 runningAADemo   = false;
-    b32 aaSceneRendered = false;
+
+    // @Temporary
+    OpenGL_AA_Demo demo;
 };
 
 

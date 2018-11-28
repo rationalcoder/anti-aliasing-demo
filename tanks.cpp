@@ -191,6 +191,7 @@ pick_technique_set(AA_Demo& demo)
 static inline void
 save_demo_results(AA_Demo& demo)
 {
+    log_debug("Saving...\n");
 }
 
 static inline void
@@ -215,6 +216,9 @@ update_aa_demo(AA_Demo& demo)
                                      ImGuiWindowFlags_NoResize);
 
     if (!demo.on) {
+        if (ImGui::Button("Toggle Fullscreen", v2(-1, 0)))
+            platform_toggle_fullscreen();
+
         if (ImGui::Button("Start Demo", v2(-1, 0))) {
             pick_technique_set(demo);
             demo.on = true;
@@ -238,7 +242,6 @@ update_aa_demo(AA_Demo& demo)
             ImGui::SameLine(0, 5);
 
             if (ImGui::Button("Best", v2(-1, 0))) {
-                log_debug("Best: %d\n", i);
                 demo.curTechniques[i] = AA_INVALID;
                 demo.chosenTechniques[demo.chosenCount] = demo.curTechniques[i];
                 demo.chosenCount++;
@@ -250,16 +253,33 @@ update_aa_demo(AA_Demo& demo)
         ImGui::Separator();
         ImGui::Spacing();
 
-        b32 submitted = false;
-        if (ImGui::InputText("EUID", demo.euid, ArraySize(demo.euid), ImGuiInputTextFlags_EnterReturnsTrue)) {
-            submitted = true;
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("EUID:");
+        ImGui::SameLine();
+
+        ImGui::PushItemWidth(-1);
+
+        b32 submitted    = false;
+        umm submittedLen = 0;
+        if (ImGui::InputText("##EUID", demo.euid, ArraySize(demo.euid),
+                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+            submittedLen = strlen(demo.euid);
+
+            if (submittedLen)
+                submitted = true;
         }
+
+        ImGui::PopItemWidth();
 
         ImGui::Spacing();
 
         if (ImGui::Button("Sumbit", v2(-1, 0))) {
-            log_debug("EUID: %s\n", demo.euid);
-            submitted = true;
+            if (!submitted) {
+                submittedLen = strlen(demo.euid);
+
+                if (submittedLen)
+                    submitted = true;
+            }
         }
 
         if (submitted) {

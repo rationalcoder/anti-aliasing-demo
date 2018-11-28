@@ -3,5 +3,7 @@
 out
 *.zip
 build/
-*.swp
+*.swp*
+*.swo*
 *.cap
+*imgui.ini*

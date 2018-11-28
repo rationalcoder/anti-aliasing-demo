@@ -438,6 +438,7 @@ stage_static_mesh(Rolling_Cache&, Render_Static_Mesh* cmd)
         }
 
         stagedGroup.diffuseMap  = stage_texture(group.diffuseMap,  TexOpt_SRGB | TexOpt_Mipmap, GL_REPEAT);
+        //stagedGroup.diffuseMap  = stage_texture(group.diffuseMap,  TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.emissiveMap = stage_texture(group.emissiveMap, TexOpt_SRGB | TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.normalMap   = stage_texture(group.normalMap,   TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.specularMap = stage_texture(group.specularMap, TexOpt_Mipmap, GL_REPEAT);
@@ -570,15 +571,15 @@ renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
-    glEnable(GL_FRAMEBUFFER_SRGB); // FIXME: multiple fbs later for AA techniques, toggle this on/off for ui, etc.
+    glEnable(GL_FRAMEBUFFER_SRGB);
 
     glCullFace(GL_BACK);
 
     return true;
 }
 
-extern void
-renderer_begin_frame(Memory_Arena* workspace, void* commands, u32 count)
+static void
+renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count, GLbitfield toClear)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
 
@@ -608,7 +609,14 @@ renderer_begin_frame(Memory_Arena* workspace, void* commands, u32 count)
         }
     }
 
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(toClear);
+}
+
+extern void
+renderer_begin_frame(Memory_Arena* workspace, void* commands, u32 count)
+{
+    renderer_begin_frame_internal(workspace, commands, count,
+                                  GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 extern b32
@@ -773,7 +781,7 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     glUseProgram(imgui.program.id);
-    glUniform1i(imgui.program.id, 0);
+    glUniform1i(imgui.program.texture, 0);
 
     v2 topLeft      = drawData->DisplayPos;
     v2 bottomRight  = (v2)drawData->DisplayPos + (v2)drawData->DisplaySize;
@@ -851,36 +859,156 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
 
 // AA Demo
 
-static inline b32
-allocate_msaa_pass()
+static inline void
+free_msaa_pass(MSAA_Pass* pass)
 {
+    assert(pass->sampleCount);
+
+    glDeleteTextures(1, &pass->colorBuffer);
+    glDeleteRenderbuffers(1, &pass->depthBuffer);
+    glDeleteFramebuffers(1, &pass->framebuffer);
+
+    pass->colorBuffer = GL_INVALID_VALUE;
+    pass->depthBuffer = GL_INVALID_VALUE;
+    pass->framebuffer = GL_INVALID_VALUE;
+    pass->sampleCount = 0;
 }
 
 static inline b32
-free_msaa_pass()
+load_msaa_pass(Game_Resolution res, u32 sampleCount, MSAA_Pass* pass)
 {
+    glGenTextures(1, &pass->colorBuffer);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, pass->colorBuffer);
+
+    // NOTE(blake): if textures(read/write) and render buffers(read only) are mixed, fixedsamplelocations must be GL_TRUE!
+    glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, sampleCount, GL_RGBA8, res.w, res.h, GL_TRUE);
+
+    glGenRenderbuffers(1, &pass->depthBuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, pass->depthBuffer);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, sampleCount, GL_DEPTH_COMPONENT32F, res.w, res.h);
+
+    glGenFramebuffers(1, &pass->framebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, pass->framebuffer);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, pass->colorBuffer, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, pass->depthBuffer);
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        log_debug("MSAA %dX framebuffer incomplete! (GL Error: %x)\n", sampleCount, status);
+        return false;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+    pass->sampleCount = sampleCount;
+    return true;
 }
+
+static inline b32
+create_color_framebuffer(Game_Resolution res, Color_Framebuffer* fb)
+{
+    glGenTextures(1, &fb->colorBuffer);
+    glBindTexture(GL_TEXTURE_2D, fb->colorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, res.w, res.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+    glGenFramebuffers(1, &fb->framebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb->framebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fb->colorBuffer, 0);
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        log_debug("Final color framebuffer incomplete! (GL Error: %x)\n", status);
+        return false;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    return true;
+}
+
+static inline void
+render_all_techniques(Memory_Arena* ws, Game_Resolution res,
+                      void* execCommands, u32 execCount)
+{
+    OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
+    OpenGL_AA_Demo&  demo     = renderer->demo;
+
+    // NOTE(blake): In order to keep the final blitting code the same for all techniques and allow
+    // the final color buffer to stretch to fit the windows client area, we need to resolve
+    // the multisampled color buffers into a non-multisampled color buffer here.
+
+    load_msaa_pass(res, 2, &demo.msaaPass);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, demo.msaaPass.framebuffer);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    renderer_exec(ws, execCommands, execCount);
+
+    // Final, non-multisampled RGB8 color buffer.
+    Color_Framebuffer msaa2xColorFb;
+    create_color_framebuffer(res, &msaa2xColorFb);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, demo.msaaPass.framebuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, msaa2xColorFb.framebuffer);
+    glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, res.w, res.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+    demo.finalColorFramebuffers[AA_MSAA_2X] = msaa2xColorFb.framebuffer;
+
+    free_msaa_pass(&demo.msaaPass);
+
+    //load_msaa_pass(res, 4, &demo.msaaPass);
+    //load_msaa_pass(res, 8, &demo.msaaPass);
+    //load_msaa_pass(res, 16, &demo.msaaPass);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+}
+
+// NOTE(blake): the default win32 framebuffer has a color buffer and a depth buffer.
+// This is wasteful for everything but no AA passes, but it's not that big of a deal.
 
 extern void
 renderer_demo_aa(Memory_Arena* ws, Game_Resolution res, AA_Technique technique,
                  void* beginCommands, u32 beginCount,
-                 void* execCommands, u32 execCount,
+                 void* execCommands,  u32 execCount,
                  struct ImDrawData* endFrameDrawData)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
+    OpenGL_AA_Demo&  demo     = renderer->demo;
 
+    // Handle commands like `set viewport`, but don't clear any framebuffer attachments.
     renderer_begin_frame(ws, beginCommands, beginCount);
-    renderer_exec(ws, execCommands, execCount);
-    renderer_end_frame(ws, endFrameDrawData);
 
-    //renderer->runningAADemo = true;
+    if (!demo.on) {
+        render_all_techniques(ws, res, execCommands, execCount);
+        demo.on = true;
+    }
+
+    // Blit the final color buffer to the default back buffer.
+
+    GLuint finalFramebuffer = demo.finalColorFramebuffers[AA_MSAA_2X];
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, finalFramebuffer);
+    glDrawBuffer(GL_BACK);
+
+    log_debug("Res: %u %u\n", gGame->clientRes.w, gGame->clientRes.h);
+    log_debug("Res2: %u %u\n", res.w, res.h);
+    glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, gGame->clientRes.w, gGame->clientRes.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+    // Avoid having to clear the depth buffer to draw the UI. Currently, this is redundant.
+    glDisable(GL_DEPTH_TEST);
+    renderer_end_frame(ws, endFrameDrawData);
+    glEnable(GL_DEPTH_TEST);
 }
 
 extern void
 renderer_stop_aa_demo(Memory_Arena* ws)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
+    OpenGL_AA_Demo&  demo     = renderer->demo;
 
     // TODO: free framebuffers
-    //renderer->runningAADemo = false;
+    demo.on = false;
 }

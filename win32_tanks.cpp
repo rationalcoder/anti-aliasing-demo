@@ -44,6 +44,8 @@ struct Win32_State
     HDC   dc   = NULL;
     HGLRC glrc = NULL;
 
+    WINDOWPLACEMENT prevWindowPlacement;
+
     HANDLE console = INVALID_HANDLE_VALUE;
 
     LARGE_INTEGER frequency = {};
@@ -257,6 +259,17 @@ win32_event_callback(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (wParam > 0 && wParam < 0x10000)
             win32_add_input_character(&gWin32State, (u16)wParam);
         return 0;
+    //case WM_SETFOCUS: return 0;
+    //case WM_KILLFOCUS: return 0;
+    //case WM_ACTIVATE: return 0;
+    //case WM_ACTIVATEAPP: return 0;
+    //case WM_GETICON: return 0;
+    //case WM_SETICON: return 0;
+    //case WM_MOUSEFIRST: return 0;
+    //case WM_MOUSELAST: return 0;
+    // NOTE(blake): this one is what causes screen flickering when gaining/losing focus in fullscreen
+    // It's really hard to handle though without ruining alt+tab behavior for everyone.
+    //case WM_NCACTIVATE: return 0;
     default:
         break;
     }
@@ -578,7 +591,8 @@ win32_register_window_classes(HINSTANCE instance)
     wc.hIcon         = LoadIconA(NULL, IDI_WINLOGO);
     wc.hIconSm       = wc.hIcon;
     wc.hCursor       = LoadCursorA(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    //wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    wc.hbrBackground = NULL;
     wc.lpszMenuName  = NULL;
     wc.lpszClassName = "Dummy";
 
@@ -601,11 +615,23 @@ win32_create_window(Win32_State* state, HINSTANCE instance,
                     const char* windClass, const char* title,
                     int w, int h)
 {
-    DWORD styleFlags = WS_OVERLAPPEDWINDOW | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
+    DWORD styleFlags = WS_OVERLAPPEDWINDOW;
     Win32_Window_Position pos = win32_centered_window(w, h);
 
+    RECT rect;
+    rect.top    = 0;
+    rect.left   = 0;
+    rect.bottom = h;
+    rect.right  = w;
+
+    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+
     HWND hwnd = CreateWindowExA(0, windClass, title, styleFlags,
-                                pos.x, pos.y, w, h, NULL, NULL, instance, NULL);
+                                pos.x, pos.y,
+                                rect.right-rect.left, rect.bottom-rect.top, NULL, NULL, instance, NULL);
+    GetClientRect(hwnd, &rect);
+    printf("Client Rect: %u %u\n", rect.right - rect.left, rect.bottom - rect.top);
+    fflush(stdout);
 
     if (!hwnd)
         return false;
@@ -792,6 +818,19 @@ win32_allocate_memory(Win32_State* state, Game_Memory* request)
     state->contiguousRegion = contiguousRegion;
 }
 
+//{ Platform API Implementation
+
+// @HackLeaf
+static void
+win32_log(Log_Level level, const char* str, s32 len)
+{
+    UNREFERENCED_PARAMETER(level);
+
+    if (len == -1) { len = down_cast<s32>(strlen(str)); }
+
+    WriteFile(gWin32State.console, str, len, NULL, NULL);
+}
+
 static b32
 win32_failed_expand_arena(Memory_Arena* arena, umm size)
 {
@@ -829,10 +868,13 @@ win32_read_entire_file(const char* name, Memory_Arena* arena, umm* size, u32 ali
     // TODO: logging
     HANDLE file = CreateFileA(name, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
     if (file == INVALID_HANDLE_VALUE)
-        return false;
+        return nullptr;
 
     LARGE_INTEGER fileSize = {};
-    GetFileSizeEx(file, &fileSize);
+    if (!GetFileSizeEx(file, &fileSize)) {
+        CloseHandle(file);
+        return nullptr;
+    }
 
     void* start = arena->at;
 
@@ -850,24 +892,68 @@ win32_read_entire_file(const char* name, Memory_Arena* arena, umm* size, u32 ali
     return start;
 }
 
-// @HackLeaf
-static void
-win32_log(Log_Level level, const char* str, s32 len)
+static b32
+win32_write_file(const char* name, void* data, umm size)
 {
-    UNREFERENCED_PARAMETER(level);
+    HANDLE file = CreateFileA(name, GENERIC_WRITE, 0, NULL, TRUNCATE_EXISTING, 0, NULL);
+    if (file == INVALID_HANDLE_VALUE)
+        return false;
 
-    if (len == -1) { len = down_cast<s32>(strlen(str)); }
+    DWORD toWrite = down_cast<DWORD>(size);
+    for (;;) {
+        DWORD written = 0;
+        if (!WriteFile(file, (u8*)data + written, toWrite, &written, NULL))
+            return false;
 
-    WriteFile(gWin32State.console, str, len, NULL, NULL);
+        toWrite -= written;
+    }
+
+    return true;
 }
+
+static b32
+win32_toggle_fullscreen()
+{
+    HWND hwnd = gWin32State.hwnd;
+
+    DWORD style = GetWindowLongA(hwnd, GWL_STYLE);
+    if (style & WS_OVERLAPPEDWINDOW) {
+        MONITORINFO info = { sizeof(info) };
+        if (GetWindowPlacement(hwnd, &gWin32State.prevWindowPlacement) &&
+            GetMonitorInfoA(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &info)) {
+
+            SetWindowLongA(hwnd, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(hwnd, HWND_TOP,
+                         info.rcMonitor.left, info.rcMonitor.top,
+                         info.rcMonitor.right - info.rcMonitor.left,
+                         info.rcMonitor.bottom - info.rcMonitor.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+
+        return true;
+    }
+    else {
+        SetWindowLongA(hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(hwnd, &gWin32State.prevWindowPlacement);
+        SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                     SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+
+        return false;
+    }
+}
+
+//} Platform API Implementation
 
 static inline void
 win32_grab_platform(Platform* platform)
 {
+    platform->log                 = win32_log;
     platform->expand_arena        = win32_expand_arena;
     platform->failed_expand_arena = win32_failed_expand_arena;
     platform->read_entire_file    = win32_read_entire_file;
-    platform->log                 = win32_log;
+    platform->write_file          = win32_write_file;
+    platform->toggle_fullscreen   = win32_toggle_fullscreen;
 
     platform->initialized = true;
 }
@@ -897,6 +983,8 @@ win32_init(Win32_State* state, Platform* platformOut, Game_Memory* memoryOut,
 
     win32_grab_platform(platformOut);
     win32_allocate_memory(state, &(*memoryOut = game_get_memory_request(platformOut)));
+
+    GetWindowPlacement(state->hwnd, &state->prevWindowPlacement);
 
     RECT clientRect;
     GetClientRect(state->hwnd, &clientRect);
