@@ -181,7 +181,7 @@ load_texture(buffer32 path)
     result.y = y;
 
     if (!result.data)
-        log_debug("Error: %s\n", stbi_failure_reason());
+        log_debug("STB Image Error: %s\n", stbi_failure_reason());
 
     return result;
 }

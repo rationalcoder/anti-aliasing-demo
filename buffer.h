@@ -9,14 +9,14 @@
 // having to step through an extra function like that in the debugger is stupid.
 
 inline b32
-operator == (buffer32 lhs, buffer32 rhs) 
+operator == (buffer32 lhs, buffer32 rhs)
 { return lhs.size == rhs.size && memcmp(lhs.data, rhs.data, lhs.size) == 0; }
 
 inline b32
 operator == (buffer32 buffer, char c) { return buffer.size == 1 && buffer.data[0] == c; }
 
 inline b32
-operator == (buffer32 buffer, const char* str) 
+operator == (buffer32 buffer, const char* str)
 {
     if (buffer.size == 0) return *str == '\0';
 
@@ -62,7 +62,7 @@ fmt_cstr(const char* fmt, ...)
 }
 
 inline buffer32
-fmt_str(const char* fmt, ...)
+fmt(const char* fmt, ...)
 {
     va_list va;
     va_start(va, fmt);
@@ -73,6 +73,16 @@ fmt_str(const char* fmt, ...)
     va_end(va);
 
     return buffer32((u8*)buffer, (u32)written);
+}
+
+inline buffer32
+str(const char* s)
+{
+    u32 size = down_cast<u32>(strlen(s));
+    u8* data = (u8*)temp_bytes(size);
+    memcpy(data, s, size);
+
+    return buffer32(data, size);
 }
 
 inline char*
@@ -115,6 +125,15 @@ cat(const char* a, buffer32 b)
 
     return result;
 }
+
+// @Slow
+
+inline buffer32
+cat(buffer32 a, const char* b) { return cat(a, str(b)); }
+
+inline buffer32
+cat(const char* a, const char* b) { return cat(str(a), str(b)); }
+
 
 inline buffer32
 dup(buffer32 b)
@@ -180,7 +199,7 @@ inline u32 // does not include the newline.
 line_length(buffer32 buffer)
 {
     for (u32 i = 0; i < buffer.size; i++) {
-        if (buffer.data[i] == '\n') 
+        if (buffer.data[i] == '\n')
             return i;
     }
 
@@ -257,7 +276,7 @@ eat_spaces(buffer32 buffer)
             return result;
         }
     }
-    
+
     return result;
 }
 

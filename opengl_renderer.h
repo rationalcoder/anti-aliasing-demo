@@ -113,7 +113,7 @@ struct FXAA_Program
     GLint mulReduce;
     GLint minReduce;
     GLint maxSpan;
-    GLint tex;
+    GLint colorTexture;
 };
 
 struct Shader_Catalog
@@ -123,9 +123,14 @@ struct Shader_Catalog
     GLuint solidFramentShader         = GL_INVALID_VALUE;
     GLuint staticMeshVertexShader     = GL_INVALID_VALUE;
     GLuint staticMeshFragmentShader   = GL_INVALID_VALUE;
+    GLuint fxaaVertexShader           = GL_INVALID_VALUE;
+    GLuint fxaaFragmentShader         = GL_INVALID_VALUE;
 };
 
-
+// @RemoveMe(blake): OpenGL can do a better job w/o context, and
+// we can do a better job _with_ context. This just adds complexity.
+//struct Rolling_Cache {};
+#if 1
 struct Rolling_Handle
 {
     GLuint handle;
@@ -193,6 +198,7 @@ Rolling_Cache::evict()
 
     return handles[oldest].handle;
 }
+#endif
 
 struct ImGui_Program
 {
@@ -213,36 +219,51 @@ struct ImGui_Resources
 
 struct FXAA_Pass
 {
-    GLuint emptyVao    = GL_INVALID_VALUE;
-    //GLuint framebuffer = GL_INVALID_VALUE;
-    //GLuint colorBuffer = GL_INVALID_VALUE;
-    //GLuint depthBuffer = GL_INVALID_VALUE;
+    GLuint emptyVao = GL_INVALID_VALUE;
+
+    // Uniforms
+    bool on           = true;
+    bool showEdges    = false;
+    //f32 lumaThreshold = 1/8.0f;
+    f32 lumaThreshold = 1/2.0f;
+    //f32 mulReduce     = 1.0f; // super sharp/weak
+    f32 mulReduce     = 1.0f/3.0f;
+    f32 minReduce     = 1/256.0f;
+    f32 maxSpan       = 6;
 };
 
 struct MSAA_Pass
 {
     GLuint framebuffer = GL_INVALID_VALUE;
-    GLuint colorBuffer = GL_INVALID_VALUE;
-    GLuint depthBuffer = GL_INVALID_VALUE;
+    GLuint colorBuffer = GL_INVALID_VALUE; // texture
+    GLuint depthBuffer = GL_INVALID_VALUE; // renderbuffer
     u32    sampleCount = 0;
+};
+
+struct Framebuffer
+{
+    GLuint id       = GL_INVALID_VALUE;
+    GLuint color    = GL_INVALID_VALUE;
+    GLuint depth    = GL_INVALID_VALUE;
+    u32 sampleCount = 0;
 };
 
 struct Color_Framebuffer
 {
     GLuint framebuffer = GL_INVALID_VALUE;
-    GLuint colorBuffer = GL_INVALID_VALUE;
+    GLuint colorTex    = GL_INVALID_VALUE;
 };
 
 struct OpenGL_AA_Demo
 {
-    b32 on     = false;
+    b32 on = false;
 
     FXAA_Pass fxaaPass;
     MSAA_Pass msaaPass;
 
     AA_Technique currentTechnique = AA_NONE;
 
-    GLuint finalColorFramebuffers[AA_COUNT_] = {};
+    Framebuffer finalColorFramebuffers[AA_COUNT_] = {};
 };
 
 
@@ -253,7 +274,7 @@ struct OpenGL_Renderer
     Lines_Program linesProgram;
     Cubes_Program cubesProgram;
     Static_Mesh_Program staticMeshProgram;
-    FXAA_Program program;
+    FXAA_Program fxaaProgram;
 
     GLuint debugCubeVertexBuffer = GL_INVALID_VALUE;
     GLuint debugCubeIndexBuffer  = GL_INVALID_VALUE;

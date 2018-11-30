@@ -41,6 +41,7 @@ struct Game_State
 struct AA_Demo
 {
     bool showSceneConfig = true;
+    bool showTechniques  = false;
 
     AA_Technique techniqueCatalog[AA_COUNT_] =
     {
@@ -111,7 +112,7 @@ struct Game
 
 
 inline void*
-game_allocate_(umm size, u32 alignment) 
+game_allocate_(umm size, u32 alignment)
 { return gGame->allocator.func(gGame->allocator.data, size, alignment); }
 
 inline void*
@@ -124,8 +125,8 @@ game_allocate_zero_(umm size, u32 alignment)
 }
 
 inline void*
-game_allocate_copy_(umm size, u32 alignment, void* data) 
-{ 
+game_allocate_copy_(umm size, u32 alignment, void* data)
+{
     void* space = gGame->allocator.func(gGame->allocator.data, size, alignment);
     memcpy(space, data, size);
 
@@ -185,7 +186,7 @@ struct Game_Memory
     });
 };
 
-// NOTE: the platform layer will fill the actual memory fields out 
+// NOTE: the platform layer will fill the actual memory fields out
 // and pass it back to us in game_init().
 inline Game_Memory
 game_get_memory_request(Platform* platform)
@@ -210,7 +211,7 @@ game_get_memory_request(Platform* platform)
     Memory_Arena& modelLoading = request.modelLoading;
     modelLoading.tag  = "Model Loading Storage";
     modelLoading.size = Megabytes(1);
-    modelLoading.max  = Megabytes(16);
+    modelLoading.max  = Megabytes(64);
 
     // NOTE(blake): where/how this CB is set highly subject to change.
     assert(platform->initialized);

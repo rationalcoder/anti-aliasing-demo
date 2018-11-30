@@ -53,12 +53,26 @@ read_obj_file(const char* path)
     //return parse_obj_file(buffer, PostProcess_GenNormals);
 }
 
+// For stuff like setting a default specular coefficient.
+static inline void
+sanitize_materials(MTL_File& file)
+{
+    for (u32 i = 0; i < file.materialCount; i++) {
+        MTL_Material& mat = file.materials[i];
+        if (mat.specularExponent == 0)
+            mat.specularExponent = 80;
+    }
+}
+
 static inline MTL_File
 read_mtl_file(buffer32 path)
 {
     buffer32 buffer = read_file_buffer(path);
 
-    return parse_mtl_file(buffer);
+    MTL_File result = parse_mtl_file(buffer);
+    sanitize_materials(result);
+
+    return result;
 }
 
 static inline void
@@ -73,15 +87,18 @@ setup_test_scene()
 
     //OBJ_File bob  = read_obj_file("demo/assets/boblampclean.obj");
     OBJ_File heli = read_obj_file("demo/assets/hheli.obj");
-    OBJ_File box = read_obj_file("demo/assets/box.obj");
+    OBJ_File box  = read_obj_file("demo/assets/box.obj");
+    OBJ_File jeep = read_obj_file("demo/assets/jeep.obj");
 
     //MTL_File bobMtl  = read_mtl_file(cat("demo/assets/", bob.mtllib));
     MTL_File heliMtl = read_mtl_file(cat("demo/assets/", heli.mtllib));
-    MTL_File boxMtl = read_mtl_file(cat("demo/assets/", box.mtllib));
+    MTL_File boxMtl  = read_mtl_file(cat("demo/assets/", box.mtllib));
+    MTL_File jeepMtl = read_mtl_file(cat("demo/assets/", jeep.mtllib));
 
     //Static_Mesh bobMesh  = load_static_mesh(bob, bobMtl, "demo/assets/");
     Static_Mesh heliMesh = load_static_mesh(heli, heliMtl, "demo/assets/");
-    Static_Mesh boxMesh = load_static_mesh(box, boxMtl, "demo/assets/");
+    Static_Mesh boxMesh  = load_static_mesh(box,  boxMtl,  "demo/assets/");
+    Static_Mesh jeepMesh = load_static_mesh(jeep, jeepMtl, "demo/assets/");
 
     gGame->allocator.data = &gMem->perm;
 
@@ -94,7 +111,7 @@ setup_test_scene()
     }
 
     set_render_target(gGame->residentCommands); {
-        v3 lightPos(-3, 0, 1);
+        v3 lightPos(-3, 1, 3);
         v3 lightColor(1, 1, 1);
 
         cmd_render_point_light(lightPos, lightColor);
@@ -111,22 +128,33 @@ setup_test_scene()
         v3 centers[20] = {};
         points_by_step(20, v3(-10.5f, 10.5f, 0.0f), v3(0, -.5, 0), centers);
         cmd_render_debug_cubes(view_of(centers), .5f, color);
-        //cmd_render_static_mesh(bobMesh, mat4(.5f));
 
         mat4 xform;
         xform = glm::rotate(xform, glm::pi<f32>()/2, v3(1, 0, 0));
         xform = glm::scale(xform, v3(.02f));
 
-        //cmd_render_static_mesh(bobMesh, xform);
         cmd_render_static_mesh(heliMesh, xform);
 
-        //cmd_render_static_mesh(boxMesh, mat4(mat3(.5f)));
-        cmd_render_static_mesh(boxMesh, mat4(1));
+        xform = mat4();
+        xform = glm::translate(xform, v3(-3.5, -0.2, -.2f));
+        //xform = glm::rotate(xform, glm::pi<f32>()/11, v3(0, 0, 1));
+        xform = glm::scale(xform, v3(3, 3, .2f));
+        cmd_render_static_mesh(boxMesh, xform);
 
-        Debug_Normals boxNormals = make_debug_normals(boxMesh);
-        cmd_render_debug_lines(boxNormals.t, boxNormals.vertexCount, v3(1, 0, 0));
-        cmd_render_debug_lines(boxNormals.b, boxNormals.vertexCount, v3(0, 1, 0));
-        cmd_render_debug_lines(boxNormals.n, boxNormals.vertexCount, v3(0, 0, 1));
+        xform = mat4();
+        xform = glm::translate(xform, v3(-2, 3, 0));
+        xform = glm::rotate(xform, glm::pi<f32>(), v3(0, 0, 1));
+        xform = glm::rotate(xform, glm::pi<f32>()/2, v3(1, 0, 0));
+        xform = glm::scale(xform, v3(.02f));
+
+        xform = glm::scale(xform, v3(.2f));
+        cmd_render_static_mesh(jeepMesh, xform);
+
+        // TODO(blake): make debug geometry more systemic.
+        //Debug_Normals boxNormals = make_debug_normals(boxMesh);
+        //cmd_render_debug_lines(boxNormals.t, boxNormals.vertexCount, v3(1, 0, 0));
+        //cmd_render_debug_lines(boxNormals.b, boxNormals.vertexCount, v3(0, 1, 0));
+        //cmd_render_debug_lines(boxNormals.n, boxNormals.vertexCount, v3(0, 0, 1));
     }
 }
 
@@ -182,16 +210,24 @@ pick_technique_set(AA_Demo& demo)
     demo.catalogOffset = rand() % AA_COUNT_;
 
     u32 offset = demo.catalogOffset;
-    for (u32 i = 0; i < AA_COUNT_; i++, right_rotate_value(offset, 1, AA_COUNT_-1)) {
+    for (u32 i = 0; i < AA_COUNT_; i++, right_rotate_value(offset, 0, AA_COUNT_-1)) {
         demo.curTechniques[i] = demo.techniqueCatalog[offset];
-        //log_debug("Tech: %s\n", cstr(demo.curTechniques[i]));
+        log_debug("Tech: %s\n", cstr(demo.curTechniques[i]));
     }
 }
 
 static inline void
 save_demo_results(AA_Demo& demo)
 {
-    log_debug("Saving...\n");
+    buffer32 content = str("Quality in descending order:\n");
+
+    for (int i = 0; i < ArraySize(demo.chosenTechniques); i++)
+        content = cat(cat(content, "\n"), cstr(demo.chosenTechniques[i]));
+
+    const char* path = fmt_cstr("demo/results/%s_%ux%u.txt", demo.euid,
+                                demo.res.w, demo.res.h);
+
+    platform_write_file(path, content.data, content.size);
 }
 
 static inline void
@@ -199,8 +235,9 @@ start_new_demo(AA_Demo& demo)
 {
     pick_technique_set(demo);
 
-    demo.chosenCount = 0;
+    demo.chosenCount       = 0;
     demo.selectedTechnique = AA_INVALID;
+
     memset(demo.euid,             0, sizeof(demo.euid));
     memset(demo.chosenTechniques, 0, sizeof(demo.chosenTechniques));
 }
@@ -223,10 +260,14 @@ update_aa_demo(AA_Demo& demo)
             pick_technique_set(demo);
             demo.on = true;
         }
+
+        ImGui::Checkbox("Show Techniques", &demo.showTechniques);
     }
     else {
-        if (ImGui::Button("Back", v2(-1, 0)))
+        if (ImGui::Button("Back", v2(-1, 0))) {
+            renderer_stop_aa_demo(&gGame->rendererWorkspace);
             demo.on = false;
+        }
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -236,14 +277,20 @@ update_aa_demo(AA_Demo& demo)
             if (demo.curTechniques[i] == AA_INVALID) continue;
             ImGui::PushID(i);
 
-            if (ImGui::Button(fmt_cstr("AA %d", i), v2(-40, 0)))
-                demo.selectedTechnique = demo.curTechniques[i];
+            if (demo.showTechniques) {
+                if (ImGui::Button(fmt_cstr("%s", cstr(demo.curTechniques[i])), v2(-40, 0)))
+                    demo.selectedTechnique = demo.curTechniques[i];
+            }
+            else {
+                if (ImGui::Button(fmt_cstr("AA %d", i), v2(-40, 0)))
+                    demo.selectedTechnique = demo.curTechniques[i];
+            }
 
             ImGui::SameLine(0, 5);
 
             if (ImGui::Button("Best", v2(-1, 0))) {
-                demo.curTechniques[i] = AA_INVALID;
                 demo.chosenTechniques[demo.chosenCount] = demo.curTechniques[i];
+                demo.curTechniques[i] = AA_INVALID;
                 demo.chosenCount++;
             }
             ImGui::PopID();
@@ -297,6 +344,9 @@ update_aa_demo(AA_Demo& demo)
 
     ImGui::End();
     // ImGui::ShowDemoWindow();
+
+    // TODO: options to override this.
+    demo.res = gGame->clientRes;
 }
 
 extern void
@@ -368,9 +418,9 @@ game_resize(Game_Resolution clientRes)
     gGame->closestRes = closestResolution;
     gGame->clientRes  = clientRes;
 
-    log_debug("Set Viewport\n");
     set_render_target(gGame->frameBeginCommands);
     cmd_set_viewport(0, 0, clientRes.w, clientRes.h);
+    log_debug("Set Viewport: %u %u\n", clientRes.w, clientRes.h);
 }
 
 extern void
@@ -401,9 +451,9 @@ game_render(f32 /*frameRatio*/, struct ImDrawData* imguiData)
         set_render_target(gGame->frameBeginCommands);
         cmd_set_view_matrix(gGame->camera.view_matrix());
 
-        renderer_demo_aa(&gGame->rendererWorkspace, demo.res,    demo.selectedTechnique,
-                         gGame->frameBeginCommands.arena.start,  gGame->frameBeginCommands.count,
-                         gGame->residentCommands.arena.start,    gGame->residentCommands.count,
+        renderer_demo_aa(&gGame->rendererWorkspace, demo.res,   demo.selectedTechnique,
+                         gGame->frameBeginCommands.arena.start, gGame->frameBeginCommands.count,
+                         gGame->residentCommands.arena.start,   gGame->residentCommands.count,
                          imguiData);
     }
 }

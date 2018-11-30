@@ -138,43 +138,6 @@ win32_center_cursor()
     return point;
 }
 
-static inline bool
-win32_handle_non_input_events(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, LRESULT* result)
-{
-    UNREFERENCED_PARAMETER(hWnd);
-    UNREFERENCED_PARAMETER(wParam);
-
-    switch (message) {
-    case WM_CLOSE:
-        gWin32State.shouldQuit = true;
-        *result = 0;
-        return true;
-    case WM_DESTROY:
-        gWin32State.shouldQuit = true;
-        PostQuitMessage(0);
-        *result = 0;
-        return true;
-    case WM_SIZE: {
-        // NOTE: only resize the game if the resolution has actually changed.
-        // Otherwise, we will end up creating all FBO's twice on init.
-        // The game is responsible for deciding when to actually resize buffers.
-        // It might need pixel-perfect resize informatin for mouse interactions.
-
-        u32 w = LOWORD(lParam);
-        u32 h = HIWORD(lParam);
-
-        gWin32State.latestClientRes.w  = w;
-        gWin32State.latestClientRes.h  = h;
-
-        *result = 0;
-        return true;
-    }
-    default: break;
-    }
-
-    return false;
-}
-
 LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 static LRESULT CALLBACK
@@ -215,6 +178,8 @@ win32_event_callback(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         gWin32State.latestClientRes.w  = w;
         gWin32State.latestClientRes.h  = h;
+        printf("%u %u\n", w, h);
+        fflush(stdout);
 
         return 0;
     }
@@ -468,7 +433,7 @@ win32_imgui_init(Win32_State* state)
     // NOTE(blake): initting imgui is done in game_init() so we can do it after renderer_init().
 }
 
-static void 
+static void
 win32_game_loop(Win32_State* state)
 {
     LARGE_INTEGER prev;
@@ -591,8 +556,7 @@ win32_register_window_classes(HINSTANCE instance)
     wc.hIcon         = LoadIconA(NULL, IDI_WINLOGO);
     wc.hIconSm       = wc.hIcon;
     wc.hCursor       = LoadCursorA(NULL, IDC_ARROW);
-    //wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wc.hbrBackground = NULL;
+    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     wc.lpszMenuName  = NULL;
     wc.lpszClassName = "Dummy";
 
@@ -702,6 +666,7 @@ win32_create_opengl_window(Win32_State* state, HINSTANCE instance, int w, int h)
     // TODO: check for WGL_ARB_create_context_profile
     // NOTE: there is almost no chance that the above won't be present.
     // TODO: check for WGL_EXT_swap_control_tear
+    // TODO: check for GL_EXT_texture_sRGB_decode
 
     // Done with the fake context. Close the old window, and make a new one with the
     // right opengl settings.
@@ -740,6 +705,7 @@ win32_create_opengl_window(Win32_State* state, HINSTANCE instance, int w, int h)
         WGL_CONTEXT_MAJOR_VERSION_ARB, target_opengl_version_major(),
         WGL_CONTEXT_MINOR_VERSION_ARB, target_opengl_version_minor(),
         WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+        //WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
         0
     };
 
@@ -895,18 +861,20 @@ win32_read_entire_file(const char* name, Memory_Arena* arena, umm* size, u32 ali
 static b32
 win32_write_file(const char* name, void* data, umm size)
 {
-    HANDLE file = CreateFileA(name, GENERIC_WRITE, 0, NULL, TRUNCATE_EXISTING, 0, NULL);
+    HANDLE file = CreateFileA(name, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, 0, NULL);
     if (file == INVALID_HANDLE_VALUE)
         return false;
 
     DWORD toWrite = down_cast<DWORD>(size);
-    for (;;) {
+    while (toWrite) {
         DWORD written = 0;
         if (!WriteFile(file, (u8*)data + written, toWrite, &written, NULL))
             return false;
 
         toWrite -= written;
     }
+
+    CloseHandle(file);
 
     return true;
 }

@@ -27,7 +27,6 @@ void main()
         vec3 ambient = .01 * diffuse.rgb;
         //vec3 ambient = vec3(.01, .01, .01);
 
-        // TODO: normal mapping support
         vec3 n = normalize(u_hasNormalMap ? (texture(u_normal, v_uv).rgb * 2 - 1) : v_normal);
         vec3 l = normalize(v_lightP - v_pos);
         vec3 e = normalize(v_eye);
@@ -41,7 +40,7 @@ void main()
 
         float d  = v_lightDist;
         float d2 = d * d;
-        float attenuation =  1.0 / (1.0 + .02*d + .1*d2);
+        float attenuation =  1.0 / (1.0 + .1*d + .05*d2);
         //float attenuation =  1.0;
         gl_FragColor = vec4(max(ambient, attenuation * (diffuseComponent + specularComponent)), diffuse.a);
     }

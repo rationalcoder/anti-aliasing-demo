@@ -64,29 +64,29 @@ struct Bitset
 };
 
 template <u32 N_> void
-Bitset<N_>::set(u32 i) 
-{ 
-    u32 idx = i >> 5; 
-    _array[idx] |= (i - (idx << 5)); 
+Bitset<N_>::set(u32 i)
+{
+    u32 idx = i >> 5;
+    _array[idx] |= (i - (idx << 5));
 }
 
 template <u32 N_> void
-Bitset<N_>::unset(u32 i) 
-{ 
-    u32 idx = i >> 5; 
-    _array[idx] &= ~(i - (idx << 5)); 
+Bitset<N_>::unset(u32 i)
+{
+    u32 idx = i >> 5;
+    _array[idx] &= ~(i - (idx << 5));
 }
 
 template <u32 N_> b32
 Bitset<N_>::is_set(u32 i) const
-{ 
-    u32 idx = i >> 5; 
-    return _array[idx] & (i - (idx << 5)); 
+{
+    u32 idx = i >> 5;
+    return _array[idx] & (i - (idx << 5));
 }
 
 template <u32 N_> b32
 Bitset<N_>::all() const
-{ 
+{
     for (u32 i = 0; i < element_count(); i++)
         if (_array[i] != ~(u32)0) return false;
 
@@ -95,7 +95,7 @@ Bitset<N_>::all() const
 
 template <u32 N_> b32
 Bitset<N_>::none() const
-{ 
+{
     for (u32 i = 0; i < element_count(); i++)
         if (_array[i] != 0) return false;
 
@@ -138,6 +138,10 @@ using buffer8  = Array_View<u8, u8>;
 using buffer16 = Array_View<u8, u16>;
 using buffer32 = Array_View<u8, u32>;
 using buffer64 = Array_View<u8, u64>;
+
+// TODO(blake): first class type. This is just so I can write code that won't
+// have to change once I get around to this.
+using string32 = buffer32;
 
 template <typename T_> inline Array_View<T_, u32>
 view_of(T_* data, u32 size) { return Array_View<T_, u32>(data, size); }
