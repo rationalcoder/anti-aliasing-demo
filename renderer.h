@@ -71,8 +71,8 @@ enum AA_Technique : u32
     AA_MSAA_4X_FXAA,
     AA_MSAA_8X_FXAA,
 
-    AA_END_,
-    AA_COUNT_ = AA_END_-1,
+    COUNT_,
+    VALID_COUNT_ = COUNT_-1, // excluding AA_INVALID (0)
 };
 
 struct Set_AA_Technique

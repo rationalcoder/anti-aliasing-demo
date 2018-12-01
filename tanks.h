@@ -43,13 +43,13 @@ struct AA_Demo
     bool showSceneConfig = true;
     bool showTechniques  = false;
 
-    AA_Technique techniqueCatalog[AA_COUNT_] =
+    AA_Technique techniqueCatalog[VALID_COUNT_] =
     {
         AA_NONE, AA_FXAA, AA_MSAA_2X, AA_MSAA_2X_FXAA, AA_MSAA_4X,
         AA_MSAA_4X_FXAA, AA_MSAA_8X, AA_MSAA_8X_FXAA, AA_MSAA_16X,
     };
 
-    AA_Technique curTechniques[AA_COUNT_] = {};
+    AA_Technique curTechniques[VALID_COUNT_] = {};
     u32          chosenCount              = 0;
 
     AA_Technique selectedTechnique = AA_NONE;
@@ -59,7 +59,7 @@ struct AA_Demo
     b32 on = false;
 
     // Saved information
-    AA_Technique chosenTechniques[AA_COUNT_] = {};
+    AA_Technique chosenTechniques[VALID_COUNT_] = {};
     u32          catalogOffset               = 0;
     char         euid[17]                    = {};
 };

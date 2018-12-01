@@ -207,10 +207,10 @@ pick_technique_set(AA_Demo& demo)
     // We need the options to be different per person.
     srand((u32)time(NULL));
 
-    demo.catalogOffset = rand() % AA_COUNT_;
+    demo.catalogOffset = rand() % VALID_COUNT_;
 
     u32 offset = demo.catalogOffset;
-    for (u32 i = 0; i < AA_COUNT_; i++, right_rotate_value(offset, 0, AA_COUNT_-1)) {
+    for (u32 i = 0; i < VALID_COUNT_; i++, right_rotate_value(offset, 0, VALID_COUNT_-1)) {
         demo.curTechniques[i] = demo.techniqueCatalog[offset];
         log_debug("Tech: %s\n", cstr(demo.curTechniques[i]));
     }

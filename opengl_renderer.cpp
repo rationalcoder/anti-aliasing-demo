@@ -567,10 +567,6 @@ renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
     *workspace = sub_allocate(*storage, Kilobytes(4), 16, "Rendering Workspace");
 
     OpenGL_Renderer* renderer = push_new(*workspace, OpenGL_Renderer);
-    // FIXME: memory corruption without this extra padding...
-    push_array(*workspace, 32, Rolling_Handle);
-    push_array(*workspace, 32, Rolling_Handle);
-    push_array(*workspace, 32, Rolling_Handle);
 #if 0
     renderer->debugLinesCache.reset(32, push_array(*workspace, 32, Rolling_Handle));
     renderer->debugCubesCache.reset(32, push_array(*workspace, 32, Rolling_Handle));
@@ -1128,7 +1124,7 @@ render_all_techniques(Memory_Arena* ws, Game_Resolution res,
     Framebuffer msaa16xColorFb;
     render_msaa_pass_to_color_fbo(ws, demo.msaaPass, res, execCommands, execCount, &msaa16xColorFb);
 
-    demo.finalColorFramebuffers[AA_MSAA_16X] = msaa8xColorFb;
+    demo.finalColorFramebuffers[AA_MSAA_16X] = msaa16xColorFb;
 
     free_msaa_pass(&demo.msaaPass);
     //}

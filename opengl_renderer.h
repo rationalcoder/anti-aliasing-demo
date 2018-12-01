@@ -129,8 +129,8 @@ struct Shader_Catalog
 
 // @RemoveMe(blake): OpenGL can do a better job w/o context, and
 // we can do a better job _with_ context. This just adds complexity.
-//struct Rolling_Cache {};
-#if 1
+struct Rolling_Cache {};
+#if 0
 struct Rolling_Handle
 {
     GLuint handle;
@@ -263,7 +263,7 @@ struct OpenGL_AA_Demo
 
     AA_Technique currentTechnique = AA_NONE;
 
-    Framebuffer finalColorFramebuffers[AA_COUNT_] = {};
+    Framebuffer finalColorFramebuffers[COUNT_]; // [AA_INVALID] == invalid values.
 };
 
 
