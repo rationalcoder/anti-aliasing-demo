@@ -372,6 +372,8 @@ push_render_command_(Render_Command_Type type, u32 size, u32 alignment)
     return cmd;
 }
 
+// Frame begin commands:
+
 inline void
 cmd_set_clear_color(f32 r, f32 g, f32 b, f32 a)
 {
@@ -415,6 +417,29 @@ cmd_set_projection_matrix(const mat4& matrix)
     Set_Projection_Matrix* projMatrix = push_render_command(Set_Projection_Matrix);
     memcpy(projMatrix->mat4, &matrix, sizeof(matrix));
 }
+
+inline void
+cmd_set_aa_technique(AA_Technique t)
+{
+    Set_AA_Technique* setAA = push_render_command(Set_AA_Technique);
+    setAA->technique = t;
+}
+
+inline void
+cmd_resize_buffers(u32 w, u32 h)
+{
+    Resize_Buffers* resize = push_render_command(Resize_Buffers);
+    resize->w = w;
+    resize->h = h;
+}
+
+inline void
+cmd_resize_buffers(Game_Resolution res)
+{
+    cmd_resize_buffers(res.w, res.h);
+}
+
+// Exec commands:
 
 inline void
 cmd_render_debug_lines(v3* vertices, u32 vertexCount, v3 color)

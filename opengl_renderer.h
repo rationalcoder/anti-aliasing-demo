@@ -219,7 +219,7 @@ struct ImGui_Resources
 
 struct FXAA_Pass
 {
-    GLuint emptyVao = GL_INVALID_VALUE;
+    GLuint emptyVao     = GL_INVALID_VALUE;
 
     // Uniforms
     bool on           = true;
@@ -248,12 +248,6 @@ struct Framebuffer
     u32 sampleCount = 0;
 };
 
-struct Color_Framebuffer
-{
-    GLuint framebuffer = GL_INVALID_VALUE;
-    GLuint colorTex    = GL_INVALID_VALUE;
-};
-
 struct OpenGL_AA_Demo
 {
     b32 on = false;
@@ -261,11 +255,22 @@ struct OpenGL_AA_Demo
     FXAA_Pass fxaaPass;
     MSAA_Pass msaaPass;
 
-    AA_Technique currentTechnique = AA_NONE;
-
-    Framebuffer finalColorFramebuffers[COUNT_]; // [AA_INVALID] == invalid values.
+    Framebuffer finalColorFramebuffers[AA_COUNT_]; // [AA_INVALID] == invalid values.
 };
 
+struct OpenGL_AA_State
+{
+    AA_Technique technique = AA_NONE;
+
+    Framebuffer fxaaInputFbo; // for AA_FXAA
+    Framebuffer msaaResolveFbo; // for AA_MSAA with no FXAA
+
+    MSAA_Pass msaaPass;
+    FXAA_Pass fxaaPass;
+
+    b32 msaaOn = false;
+    b32 fxaaOn = false;
+};
 
 struct OpenGL_Renderer
 {
@@ -281,19 +286,18 @@ struct OpenGL_Renderer
 
     ImGui_Resources imgui;
 
-    Rolling_Cache debugLinesCache;
-    Rolling_Cache debugCubesCache;
-    Rolling_Cache staticMeshCache;
-
-    mat4 viewMatrix = mat4(1);
+    mat4 viewMatrix       = mat4(1);
     mat4 projectionMatrix = mat4(1);
+
+    OpenGL_AA_State aaState;
+    Game_Resolution res = { 1280, 720 }; // @Temporary
 
     // TODO(blake): more lights! Light groups!
     struct Render_Point_Light* pointLight;
 
 
     // @Temporary
-    OpenGL_AA_Demo demo;
+    OpenGL_AA_Demo aaDemo;
+    b32 aaDemoThisFrame = false;
 };
-
 

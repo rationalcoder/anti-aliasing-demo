@@ -207,12 +207,12 @@ pick_technique_set(AA_Demo& demo)
     // We need the options to be different per person.
     srand((u32)time(NULL));
 
-    demo.catalogOffset = rand() % VALID_COUNT_;
+    demo.catalogOffset = rand() % AA_VALID_COUNT_;
 
     u32 offset = demo.catalogOffset;
-    for (u32 i = 0; i < VALID_COUNT_; i++, right_rotate_value(offset, 0, VALID_COUNT_-1)) {
+    for (u32 i = 0; i < AA_VALID_COUNT_; i++, right_rotate_value(offset, 0, AA_VALID_COUNT_-1)) {
         demo.curTechniques[i] = demo.techniqueCatalog[offset];
-        log_debug("Tech: %s\n", cstr(demo.curTechniques[i]));
+        // log_debug("Tech: %s\n", cstr(demo.curTechniques[i]));
     }
 }
 
@@ -236,12 +236,11 @@ start_new_demo(AA_Demo& demo)
     pick_technique_set(demo);
 
     demo.chosenCount       = 0;
-    demo.selectedTechnique = AA_INVALID;
+    demo.selectedTechnique = demo.curTechniques[0];
 
     memset(demo.euid,             0, sizeof(demo.euid));
     memset(demo.chosenTechniques, 0, sizeof(demo.chosenTechniques));
 }
-
 
 static void
 update_aa_demo(AA_Demo& demo)
@@ -253,8 +252,12 @@ update_aa_demo(AA_Demo& demo)
                                      ImGuiWindowFlags_NoResize);
 
     if (!demo.on) {
-        if (ImGui::Button("Toggle Fullscreen", v2(-1, 0)))
+        if (ImGui::Button("Toggle Fullscreen", v2(-1, 0))) {
             platform_toggle_fullscreen();
+            set_render_target(gGame->frameBeginCommands);
+            //cmd_resize_buffers(closestResolution.w, closestResolution.h);
+            cmd_resize_buffers(1920, 1080);
+        }
 
         if (ImGui::Button("Start Demo", v2(-1, 0))) {
             pick_technique_set(demo);
@@ -262,6 +265,22 @@ update_aa_demo(AA_Demo& demo)
         }
 
         ImGui::Checkbox("Show Techniques", &demo.showTechniques);
+
+#if 1 // Technique preview is slow (due to double blitting) and broken
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::Text("Technique Preview:");
+        ImGui::Spacing();
+
+        set_render_target(gGame->frameBeginCommands);
+
+        for (u32 i = 1; i < AA_VALID_COUNT_; i++) {
+            const char* name = cstr((AA_Technique)i);
+            if (ImGui::Button(fmt_cstr("%s##%s", name, name), v2(-1, 0)))
+                cmd_set_aa_technique((AA_Technique)i);
+        }
+#endif
     }
     else {
         if (ImGui::Button("Back", v2(-1, 0))) {
@@ -420,6 +439,7 @@ game_resize(Game_Resolution clientRes)
 
     set_render_target(gGame->frameBeginCommands);
     cmd_set_viewport(0, 0, clientRes.w, clientRes.h);
+    //cmd_resize_buffers(closestResolution.w, closestResolution.h);
     log_debug("Set Viewport: %u %u\n", clientRes.w, clientRes.h);
 }
 

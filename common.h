@@ -36,7 +36,7 @@ static_assert(sizeof(CONCAT(_anon_array, counter)) % sizeof(type) == 0,\
 FIELD_ARRAY_IMPL(type, name, structDefinition, __COUNTER__)
 
 template <typename Func_>
-struct Defer_Impl 
+struct Defer_Impl
 {
     Func_ f_;
     Defer_Impl(Func_ f) : f_(f) {}

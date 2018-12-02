@@ -3,10 +3,6 @@
 #include "memory.h"
 #include "mesh.h"
 
-using Renderer_Handle      = void*;
-using Renderer_Framebuffer = void*;
-
-
 enum Render_Command_Type : u32
 {
     // Commands for renderer_begin_frame().
@@ -15,6 +11,7 @@ enum Render_Command_Type : u32
     RenderCommand_Set_View_Matrix,
     RenderCommand_Set_Projection_Matrix,
     RenderCommand_Set_AA_Technique,
+    RenderCommand_Resize_Buffers, // actually resize swap-chain images
 
     // Not actually used, but useful numerically for sanity checks.
     RenderCommand_Begin_Render_Pass,
@@ -71,14 +68,21 @@ enum AA_Technique : u32
     AA_MSAA_4X_FXAA,
     AA_MSAA_8X_FXAA,
 
-    COUNT_,
-    VALID_COUNT_ = COUNT_-1, // excluding AA_INVALID (0)
+    AA_COUNT_,
+    AA_VALID_COUNT_ = AA_COUNT_-1, // excluding AA_INVALID (0)
 };
 
 struct Set_AA_Technique
 {
     void* _staged;
     AA_Technique technique;
+};
+
+struct Resize_Buffers
+{
+    void* _staged;
+    u32 w;
+    u32 h;
 };
 
 struct Render_Textured_Quad

@@ -14,7 +14,7 @@
 #include "game_rendering.h"
 #include "buffer.h"
 
-#define USE_CRAPPY_CACHE 0
+//{ Utility
 
 static inline b32
 compile_shader_from_source(GLuint shader, buffer32 source)
@@ -180,28 +180,8 @@ load_fxaa_program(const Shader_Catalog& catalog, FXAA_Program* program)
 
 
 static inline GLuint
-bind_debug_lines(Rolling_Cache& cache, Render_Debug_Lines* cmd)
+bind_debug_lines(Render_Debug_Lines* cmd)
 {
-#if 0
-    // If this command has already been staged and hasn't been evicted, return its vao.
-    u32 id = down_cast<u32>(cmd->_staged);
-
-    GLuint vao = GL_INVALID_VALUE;
-    if (cache.get(id, &vao)) {
-        glBindVertexArray(vao);
-        return vao;
-    }
-
-    Rolling_Handle* handle = nullptr;
-    if (!cache.add(&handle)) {
-        GLuint evicted = cache.evict();
-        glDeleteVertexArrays(1, &evicted);
-        cache.add(&handle);
-    }
-
-    GLuint* newVao = &handle->handle;
-#endif
-    ((void)cache);
     if (cmd->_staged) {
         GLuint vao = (GLuint)(umm)cmd->_staged;
         glBindVertexArray(vao);
@@ -225,16 +205,12 @@ bind_debug_lines(Rolling_Cache& cache, Render_Debug_Lines* cmd)
     glDeleteBuffers(1, &vbo);
     glBindVertexArray(newVao); // left bound on return
 
-#if 0
-    cmd->_staged = (void*)(uptr)handle->id;
-#else
     cmd->_staged = (void*)(umm)newVao;
-#endif
     return newVao;
 }
 
 static inline GLuint
-bind_debug_cubes(GLuint vbo, GLuint ebo, Rolling_Cache&, Render_Debug_Cubes* cmd)
+bind_debug_cubes(GLuint vbo, GLuint ebo, Render_Debug_Cubes* cmd)
 {
     if (cmd->_staged) {
         GLuint vao = (GLuint)(umm)cmd->_staged;
@@ -379,7 +355,7 @@ stage_texture(Texture texture, u32 options, GLenum wrapType)
 }
 
 static inline Staged_Static_Mesh*
-stage_static_mesh(Rolling_Cache&, Render_Static_Mesh* cmd)
+stage_static_mesh(Render_Static_Mesh* cmd)
 {
     if (cmd->_staged) return (Staged_Static_Mesh*)cmd->_staged;
 
@@ -561,17 +537,210 @@ load_imgui(ImGui_Resources* res)
     return true;
 }
 
+static void
+init_fxaa_pass(const FXAA_Program& program, Game_Resolution res, FXAA_Pass* pass)
+{
+    glGenVertexArrays(1, &pass->emptyVao);
+    glBindVertexArray(pass->emptyVao);
+    glBindVertexArray(0);
+
+    glUseProgram(program.id);
+
+    glUniform1i(program.on, pass->on);
+    glUniform1i(program.showEdges, pass->showEdges);
+    glUniform2f(program.texelStep, 1.0f/res.w, 1.0f/res.h);
+
+    glUniform1f(program.lumaThreshold, pass->lumaThreshold);
+    glUniform1f(program.minReduce, pass->minReduce);
+    glUniform1f(program.mulReduce, pass->mulReduce);
+    glUniform1f(program.maxSpan, pass->maxSpan);
+
+    glUseProgram(0);
+}
+
+static void
+free_fxaa_pass(FXAA_Pass* pass)
+{
+    glDeleteVertexArrays(1, &pass->emptyVao);
+    pass->emptyVao = GL_INVALID_VALUE;
+}
+
+// NOTE(blake): doesn't support texture depth buffers, multiple attachments, etc. NBD for now.
+// depthFormat == -1 => no depth buffer
+// sampleCount ==  1 => no multisampling. Valid choices are 1, 2, 4, 8, and 16.
+//
+static inline b32
+create_framebuffer(Game_Resolution res, GLint colorFormat, GLint depthFormat,
+                   u32 sampleCount, Framebuffer* fb)
+{
+    assert(((sampleCount & (sampleCount-1)) == 0) && sampleCount <= 16);
+
+    glGenFramebuffers(1, &fb->id);
+    glGenTextures(1, &fb->color);
+    if (depthFormat != -1)
+        glGenRenderbuffers(1, &fb->depth);
+
+    if (sampleCount == 1) {
+        glBindTexture(GL_TEXTURE_2D, fb->color);
+        // NOTE(blake): NULL data uses the pixel unpack buffer if one is bound.
+        // We aren't using one at the moment, but still.
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        glTexImage2D(GL_TEXTURE_2D, 0, colorFormat, res.w, res.h, 0, GL_RGBA /*N/A*/, GL_UNSIGNED_BYTE, NULL);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, fb->id);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fb->color, 0);
+
+        if (depthFormat != -1) {
+            glBindRenderbuffer(GL_RENDERBUFFER, fb->depth);
+            glRenderbufferStorage(GL_RENDERBUFFER, depthFormat, res.w, res.h);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, fb->depth);
+        }
+
+        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            log_debug("Framebuffer incomplete! (GL Error: %x)\n", status);
+            return false;
+        }
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    else {
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, fb->color);
+
+        // NOTE(blake): NULL data uses the pixel unpack buffer if one is bound.
+        // We aren't using one at the moment, but still.
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        // NOTE(blake): if textures(read/write) and render buffers(read only) are mixed, fixedsamplelocations must be GL_TRUE!
+        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, sampleCount, colorFormat, res.w, res.h, GL_TRUE);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, fb->id);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, fb->color, 0);
+
+        if (depthFormat != -1) {
+            glBindRenderbuffer(GL_RENDERBUFFER, fb->depth);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, sampleCount, depthFormat, res.w, res.h);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, fb->depth);
+        }
+
+        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            log_debug("MSAA %dX framebuffer incomplete! (GL Error: %x)\n", sampleCount, status);
+            return false;
+        }
+
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+    }
+
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    fb->sampleCount = sampleCount;
+    return true;
+}
+
+static inline void
+free_framebuffer(Framebuffer* fb)
+{
+    glDeleteTextures(1, &fb->color);
+    glDeleteRenderbuffers(1, &fb->depth);
+    glDeleteFramebuffers(1, &fb->id);
+
+    fb->color = GL_INVALID_VALUE;
+    fb->depth = GL_INVALID_VALUE;
+    fb->id    = GL_INVALID_VALUE;
+}
+
+static inline b32
+create_color_framebuffer(Game_Resolution res, GLint internalFormat, Framebuffer* fb)
+{ return create_framebuffer(res, internalFormat, -1, 1, fb); }
+
+
+static inline b32
+load_msaa_pass(Game_Resolution res, u32 sampleCount, MSAA_Pass* pass)
+{
+    Framebuffer fb;
+    if (!create_framebuffer(res, GL_RGB16F, GL_DEPTH_COMPONENT16, sampleCount, &fb))
+        return false;
+
+    pass->framebuffer = fb.id;
+    pass->colorBuffer = fb.color;
+    pass->depthBuffer = fb.depth;
+    pass->sampleCount = sampleCount;
+    return true;
+}
+
+static inline void
+free_msaa_pass(MSAA_Pass* pass)
+{
+    assert(pass->sampleCount);
+
+    glDeleteTextures(1, &pass->colorBuffer);
+    glDeleteRenderbuffers(1, &pass->depthBuffer);
+    glDeleteFramebuffers(1, &pass->framebuffer);
+
+    pass->colorBuffer = GL_INVALID_VALUE;
+    pass->depthBuffer = GL_INVALID_VALUE;
+    pass->framebuffer = GL_INVALID_VALUE;
+    pass->sampleCount = 0;
+}
+
+static inline void
+render_msaa_pass_to_color_fbo(Memory_Arena* ws, const MSAA_Pass& pass, Game_Resolution res,
+                              void* commands, u32 commandCount, Framebuffer* fb,
+                              bool createNewFb = true)
+{
+    if (createNewFb) create_color_framebuffer(res, GL_SRGB8_ALPHA8, fb);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, pass.framebuffer);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    renderer_exec(ws, commands, commandCount);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, pass.framebuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fb->id);
+    glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, res.w, res.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+}
+
+// Input color texture must be SRGB8_ALPHA8. Expect artefacts, otherise.
+static inline void
+render_fxaa_pass_to_color_fbo(const FXAA_Program& program, const FXAA_Pass& pass,
+                              Game_Resolution res, GLuint colorTexure, Framebuffer* fb,
+                              bool createNewFb = true, bool clearBackBuffer = false)
+{
+    if (createNewFb) create_color_framebuffer(res, GL_SRGB8, fb);
+
+    glUseProgram(program.id);
+
+    glUniform1i(program.colorTexture, 0);
+    glUniform2f(program.texelStep, 1.0f/res.w, 1.0f/res.h);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, colorTexure);
+    // No mipmap, so the default of GL_LINEAR_MIPMAP_LINEAR would just be black.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    glBindVertexArray(pass.emptyVao);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fb->id);
+    if (clearBackBuffer)
+        glClear(GL_COLOR_BUFFER_BIT);
+
+    glDisable(GL_DEPTH_TEST);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glEnable(GL_DEPTH_TEST);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
+
+//}
+
 extern b32
 renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
 {
     *workspace = sub_allocate(*storage, Kilobytes(4), 16, "Rendering Workspace");
 
     OpenGL_Renderer* renderer = push_new(*workspace, OpenGL_Renderer);
-#if 0
-    renderer->debugLinesCache.reset(32, push_array(*workspace, 32, Rolling_Handle));
-    renderer->debugCubesCache.reset(32, push_array(*workspace, 32, Rolling_Handle));
-    renderer->staticMeshCache.reset(32, push_array(*workspace, 32, Rolling_Handle));
-#endif
 
     Shader_Catalog& catalog = renderer->shaderCatalog;
 
@@ -590,9 +759,9 @@ renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
     if (!load_fxaa_program(catalog, &renderer->fxaaProgram))              return false;
 
     if (!load_debug_cube_buffers(&renderer->debugCubeVertexBuffer, &renderer->debugCubeIndexBuffer)) return false;
-#if USING_IMGUI
     if (!load_imgui(&renderer->imgui)) return false;
-#endif
+
+    init_fxaa_pass(renderer->fxaaProgram, renderer->res, &renderer->aaState.fxaaPass);
 
     // NOTE(blake): you _need_ to specify the blend equation/func.
     glEnable(GL_BLEND);
@@ -637,6 +806,103 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
             memcpy(&renderer->projectionMatrix, cmd->mat4, sizeof(renderer->projectionMatrix));
             break;
         }
+        case RenderCommand_Set_AA_Technique: {
+            if (renderer->aaDemo.on) break;
+
+            Set_AA_Technique* cmd = render_command_after<Set_AA_Technique>(header);
+            assert(cmd->technique != AA_INVALID);
+
+            OpenGL_AA_State& aaState = renderer->aaState;
+
+            // Nothing to do if switching to the same technique.
+            if (aaState.technique == cmd->technique) break;
+
+            // @TheDumbThing(blake). Resizing a buffer might be faster than re-creating it, for example.
+            if (aaState.msaaOn)                    free_msaa_pass(&aaState.msaaPass);
+            // NOTE(blake): it's no big deal to keep the fxaa pass around.
+            //if (aaState.fxaaOn)                    free_fxaa_pass(&aaState.fxaaPass);
+            if (aaState.msaaOn && !aaState.fxaaOn) free_framebuffer(&aaState.msaaResolveFbo);
+            if (aaState.technique == AA_FXAA)      free_framebuffer(&aaState.fxaaInputFbo);
+
+            u32 sampleCount = 1;
+            b32 fxaaOn      = false;
+
+            switch (cmd->technique) {
+            case AA_MSAA_2X:      sampleCount = 2;  break;
+            case AA_MSAA_4X:      sampleCount = 4;  break;
+            case AA_MSAA_8X:      sampleCount = 8;  break;
+            case AA_MSAA_16X:     sampleCount = 16; break;
+            case AA_MSAA_2X_FXAA: sampleCount = 2; fxaaOn = true; break;
+            case AA_MSAA_4X_FXAA: sampleCount = 4; fxaaOn = true; break;
+            case AA_MSAA_8X_FXAA: sampleCount = 8; fxaaOn = true; break;
+            case AA_FXAA:                          fxaaOn = true; break;
+            default: break;
+            }
+
+            b32 msaaOn = (sampleCount > 1);
+
+            // NOTE(blake): We don't need to do anything special for FXAA when it's not by itself.
+            // We can draw from an MSAA pass result directly to the back buffer; however, we can't
+            // read from the default back buffer, much less write back _to_ the back buffer.
+            //
+            if (cmd->technique == AA_FXAA) {
+                create_framebuffer(renderer->res, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
+                                   1, &aaState.fxaaInputFbo);
+            }
+            else if (msaaOn) {
+                load_msaa_pass(renderer->res, sampleCount, &aaState.msaaPass);
+
+                if (!fxaaOn) {
+                    create_framebuffer(renderer->res, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
+                                       1, &aaState.msaaResolveFbo);
+                }
+            }
+
+            aaState.technique = cmd->technique;
+            aaState.msaaOn    = msaaOn;
+            aaState.fxaaOn    = fxaaOn;
+
+            break;
+        }
+        case RenderCommand_Resize_Buffers: {
+            Resize_Buffers* resize = render_command_after<Resize_Buffers>(header);
+
+            Game_Resolution newRes = { resize->w, resize->h };
+            if (renderer->res == newRes) break;
+
+            OpenGL_AA_State& aaState = renderer->aaState;
+            assert(aaState.technique != AA_INVALID);
+
+            // The default back buffer is resized automatically by the window manager.
+            if (aaState.technique == AA_NONE)
+                break;
+
+            if (aaState.technique == AA_FXAA) {
+                free_framebuffer(&aaState.fxaaInputFbo);
+                create_framebuffer(newRes, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
+                                   1, &aaState.fxaaInputFbo);
+            }
+
+            if (aaState.msaaOn) {
+                u32 sampleCount = aaState.msaaPass.sampleCount;
+
+                free_msaa_pass(&aaState.msaaPass);
+                load_msaa_pass(newRes, sampleCount, &aaState.msaaPass);
+
+                // If we are doing MSAA only, we need an intermediate buffer to resolve to
+                // since we want to be able to blit the result to an arbitrarily-sized back buffer.
+                // NOTE(blake): only allow fixed resolutions to get rid of this complexity?
+                //
+                if (!aaState.fxaaOn) {
+                    free_framebuffer(&aaState.msaaResolveFbo);
+                    create_framebuffer(newRes, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
+                                       sampleCount, &aaState.msaaResolveFbo);
+                }
+            }
+
+            renderer->res = newRes;
+            break;
+        }
         }
     }
 
@@ -646,14 +912,42 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
 extern void
 renderer_begin_frame(Memory_Arena* workspace, void* commands, u32 count)
 {
-    renderer_begin_frame_internal(workspace, commands, count,
-                                  GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
+    OpenGL_AA_Demo&  aaDemo   = renderer->aaDemo;
+    OpenGL_AA_State& aaState  = renderer->aaState;
+
+    // NOTE(blake): the demo is only allowed to call the internal version cuz reasons.
+    assert(!aaDemo.on);
+    renderer->aaDemoThisFrame = false;
+
+    if (aaState.technique == AA_NONE) {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK);
+    }
+    else if (aaState.technique == AA_FXAA) {
+        glDrawBuffer(GL_BACK);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, aaState.fxaaInputFbo.id);
+    }
+    else if (aaState.msaaOn) {
+        glDrawBuffer(GL_BACK);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, aaState.msaaPass.framebuffer);
+    }
+
+    renderer_begin_frame_internal(workspace, commands, count, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 extern b32
 renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
+
+    // NOTE(blake): renderer_begin_frame(), renderer_exec(), and renderer_end_frame()
+    // have to be called with the same demo state since this code simply draws wherever
+    // previous calls to glDrawBuffer()/glBindFramebuffer() tell it to.
+    //
+    assert(renderer->aaDemoThisFrame == renderer->aaDemo.on);
 
     renderer->pointLight = nullptr;
 
@@ -672,7 +966,7 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
             glUniformMatrix4fv(program.mvp, 1, GL_FALSE, glm::value_ptr(mvp));
             glUniform3f(program.color, cmd->r, cmd->g, cmd->b);
 
-            bind_debug_lines(renderer->debugLinesCache, cmd);
+            bind_debug_lines(cmd);
             glDrawArrays(GL_LINES, 0, cmd->vertexCount);
             glBindVertexArray(0);
             glUseProgram(0);
@@ -687,7 +981,6 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
 
             bind_debug_cubes(renderer->debugCubeVertexBuffer,
                              renderer->debugCubeIndexBuffer,
-                             renderer->debugCubesCache,
                              cmd);
 
             mat4 viewProjection = renderer->projectionMatrix * renderer->viewMatrix;
@@ -729,7 +1022,7 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
                 glUniform1i(program.lit, 0);
             }
 
-            Staged_Static_Mesh* stagedMesh = stage_static_mesh(renderer->staticMeshCache, cmd);
+            Staged_Static_Mesh* stagedMesh = stage_static_mesh(cmd);
             glBindVertexArray(stagedMesh->vao);
 
             for (u32 i = 0; i < stagedMesh->groupCount; i++) {
@@ -784,14 +1077,83 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
     return true;
 }
 
+// NOTE(blake): this function expects all setup and command execution to be done already
+// by renderer_begin_frame() / renderer_exec(). The most this function will do is blit
+// (or render an FXAA pass) to the the default back buffer.
+//
+static void
+aa_end_frame(OpenGL_Renderer* renderer)
+{
+    // The demo sets GL_DRAW_FRAMEBUFFER separately.
+    OpenGL_AA_Demo& aaDemo = renderer->aaDemo;
+    if (aaDemo.on) return;
+
+    OpenGL_AA_State& aaState = renderer->aaState;
+    assert(aaState.technique != AA_INVALID);
+
+    if (aaState.technique == AA_NONE) {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK);
+    }
+    else if (aaState.technique == AA_FXAA) {
+        assert(aaState.fxaaInputFbo.id != GL_INVALID_VALUE);
+
+        // @Hack(blake) @Cleanup. I am causing the fxaa rendering function to pass 0 to
+        // glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0) to make the function draw to
+        // the back buffer since I am also calling glDrawBuffer(GL_BACK);
+        //
+        Framebuffer useBackBuffer;
+        useBackBuffer.id = 0;
+
+        glDrawBuffer(GL_BACK);
+
+        Game_Resolution res = gGame->clientRes;
+        render_fxaa_pass_to_color_fbo(renderer->fxaaProgram, aaState.fxaaPass,
+                                      res, aaState.fxaaInputFbo.color,
+                                      &useBackBuffer, false);
+    }
+    else if (aaState.msaaOn && aaState.fxaaOn) {
+        // @Hack(blake): same hack as the FXAA-only one.
+        Framebuffer useBackBuffer;
+        useBackBuffer.id = 0;
+
+        glDrawBuffer(GL_BACK);
+
+        render_fxaa_pass_to_color_fbo(renderer->fxaaProgram, aaState.fxaaPass,
+                                      renderer->res, aaState.msaaPass.colorBuffer,
+                                      &useBackBuffer, false);
+    }
+    else { // MSAA only
+        assert(aaState.msaaOn);
+
+        Game_Resolution res = renderer->res;
+
+        // Resolve
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, aaState.msaaPass.framebuffer);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, aaState.msaaResolveFbo.id);
+        glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, res.w, res.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+        // Scale to client resolution (resolving to a different resolution is illegal).
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, aaState.msaaResolveFbo.id);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK);
+        glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, gGame->clientRes.w, gGame->clientRes.h,
+                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0); // just cleanup
+    }
+}
+
 extern void
 renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
 {
-    // TODO: framebuffer business.
+    OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
+    ImGui_Resources& imgui    = renderer->imgui;
 
-#if !USING_IMGUI
-    return;
-#endif
+    assert(renderer->aaDemoThisFrame == renderer->aaDemo.on);
+
+    // Set GL_DRAW_FRAMEBUFFER to where we need to draw to based on AA state.
+    aa_end_frame(renderer);
 
     // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
     ImGuiIO& io  = ImGui::GetIO();
@@ -801,9 +1163,6 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
         return;
 
     drawData->ScaleClipRects(io.DisplayFramebufferScale);
-
-    OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
-    ImGui_Resources& imgui    = renderer->imgui;
 
     glEnable(GL_SCISSOR_TEST);
     glDisable(GL_CULL_FACE);
@@ -891,161 +1250,12 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
 
 // AA Demo
 
-// NOTE(blake): doesn't support texture depth buffers, multiple attachments, etc. NBD for now.
-// depthFormat == -1 => no depth buffer
-// sampleCount ==  1 => no multisampling. Valid choices are 1, 2, 4, 8, and 16.
-//
-static inline b32
-create_framebuffer(Game_Resolution res, GLint colorFormat, GLint depthFormat,
-                   u32 sampleCount, Framebuffer* fb)
-{
-    assert(((sampleCount & (sampleCount-1)) == 0) && sampleCount <= 16);
-
-    glGenFramebuffers(1, &fb->id);
-    glGenTextures(1, &fb->color);
-    if (depthFormat != -1)
-        glGenRenderbuffers(1, &fb->depth);
-
-    if (sampleCount == 1) {
-        glBindTexture(GL_TEXTURE_2D, fb->color);
-        // NOTE(blake): NULL data uses the pixel unpack buffer if one is bound.
-        // We aren't using one at the moment, but still.
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-        glTexImage2D(GL_TEXTURE_2D, 0, colorFormat, res.w, res.h, 0, GL_RGBA /*N/A*/, GL_UNSIGNED_BYTE, NULL);
-
-        glBindFramebuffer(GL_FRAMEBUFFER, fb->id);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fb->color, 0);
-
-        if (depthFormat != -1) {
-            glBindRenderbuffer(GL_RENDERBUFFER, fb->depth);
-            glRenderbufferStorage(GL_RENDERBUFFER, depthFormat, res.w, res.h);
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, fb->depth);
-        }
-
-        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-        if (status != GL_FRAMEBUFFER_COMPLETE) {
-            log_debug("Framebuffer incomplete! (GL Error: %x)\n", status);
-            return false;
-        }
-
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
-    else {
-        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, fb->color);
-
-        // NOTE(blake): NULL data uses the pixel unpack buffer if one is bound.
-        // We aren't using one at the moment, but still.
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-        // NOTE(blake): if textures(read/write) and render buffers(read only) are mixed, fixedsamplelocations must be GL_TRUE!
-        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, sampleCount, colorFormat, res.w, res.h, GL_TRUE);
-
-        glBindFramebuffer(GL_FRAMEBUFFER, fb->id);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, fb->color, 0);
-
-        if (depthFormat != -1) {
-            glBindRenderbuffer(GL_RENDERBUFFER, fb->depth);
-            glRenderbufferStorageMultisample(GL_RENDERBUFFER, sampleCount, depthFormat, res.w, res.h);
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, fb->depth);
-        }
-
-        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-        if (status != GL_FRAMEBUFFER_COMPLETE) {
-            log_debug("MSAA %dX framebuffer incomplete! (GL Error: %x)\n", sampleCount, status);
-            return false;
-        }
-
-        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
-    }
-
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    return true;
-}
-
-static inline b32
-create_color_framebuffer(Game_Resolution res, GLint internalFormat, Framebuffer* fb)
-{ return create_framebuffer(res, internalFormat, -1, 1, fb); }
-
-
-static inline void
-free_msaa_pass(MSAA_Pass* pass)
-{
-    assert(pass->sampleCount);
-
-    glDeleteTextures(1, &pass->colorBuffer);
-    glDeleteRenderbuffers(1, &pass->depthBuffer);
-    glDeleteFramebuffers(1, &pass->framebuffer);
-
-    pass->colorBuffer = GL_INVALID_VALUE;
-    pass->depthBuffer = GL_INVALID_VALUE;
-    pass->framebuffer = GL_INVALID_VALUE;
-    pass->sampleCount = 0;
-}
-
-static inline b32
-load_msaa_pass(Game_Resolution res, u32 sampleCount, MSAA_Pass* pass)
-{
-    Framebuffer fb;
-    if (!create_framebuffer(res, GL_RGB16F, GL_DEPTH_COMPONENT16, sampleCount, &fb))
-        return false;
-
-    pass->framebuffer = fb.id;
-    pass->colorBuffer = fb.color;
-    pass->depthBuffer = fb.depth;
-    pass->sampleCount = sampleCount;
-    return true;
-}
-
-static inline void
-render_msaa_pass_to_color_fbo(Memory_Arena* ws, const MSAA_Pass& pass, Game_Resolution res,
-                              void* commands, u32 commandCount, Framebuffer* fb)
-{
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, pass.framebuffer);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    renderer_exec(ws, commands, commandCount);
-
-    create_color_framebuffer(res, GL_SRGB8_ALPHA8, fb);
-
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, pass.framebuffer);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fb->id);
-    glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, res.w, res.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-}
-
-// Input color texture must be SRGB8_ALPHA8. Expect artefacts, otherise.
-static inline void
-render_fxaa_pass_to_color_fbo(const FXAA_Program& program, const FXAA_Pass& pass,
-                              Game_Resolution res, GLuint colorTexure, Framebuffer* fb)
-{
-    create_color_framebuffer(res, GL_SRGB8, fb);
-
-    glUseProgram(program.id);
-
-    glUniform1i(program.colorTexture, 0);
-    glUniform2f(program.texelStep, 1.0f/res.w, 1.0f/res.h);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, colorTexure);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fb->id);
-    glBindVertexArray(pass.emptyVao);
-
-    glDisable(GL_DEPTH_TEST);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glEnable(GL_DEPTH_TEST);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glBindVertexArray(0);
-    glUseProgram(0);
-}
-
 static inline void
 render_all_techniques(Memory_Arena* ws, Game_Resolution res,
                       void* execCommands, u32 execCount)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
-    OpenGL_AA_Demo&  demo     = renderer->demo;
+    OpenGL_AA_Demo&  demo     = renderer->aaDemo;
 
     //{ No AA and plain FXAA
 
@@ -1132,34 +1342,6 @@ render_all_techniques(Memory_Arena* ws, Game_Resolution res,
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 }
 
-static void
-init_fxaa_pass(const FXAA_Program& program, Game_Resolution res, FXAA_Pass* pass)
-{
-    glGenVertexArrays(1, &pass->emptyVao);
-    glBindVertexArray(pass->emptyVao);
-    glBindVertexArray(0);
-
-    glUseProgram(program.id);
-
-    glUniform1i(program.on, pass->on);
-    glUniform1i(program.showEdges, pass->showEdges);
-    glUniform2f(program.texelStep, 1.0f/res.w, 1.0f/res.h);
-
-    glUniform1f(program.lumaThreshold, pass->lumaThreshold);
-    glUniform1f(program.minReduce, pass->minReduce);
-    glUniform1f(program.mulReduce, pass->mulReduce);
-    glUniform1f(program.maxSpan, pass->maxSpan);
-
-    glUseProgram(0);
-}
-
-static void
-free_fxaa_pass(FXAA_Pass* pass)
-{
-    glDeleteVertexArrays(1, &pass->emptyVao);
-    pass->emptyVao = GL_INVALID_VALUE;
-}
-
 // NOTE(blake): the default win32 framebuffer has a color buffer and a depth buffer.
 // This is wasteful for everything but no AA passes, but it's not that big of a deal.
 
@@ -1170,16 +1352,21 @@ renderer_demo_aa(Memory_Arena* ws, Game_Resolution res, AA_Technique technique,
                  struct ImDrawData* endFrameDrawData)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
-    OpenGL_AA_Demo&  demo     = renderer->demo;
+    OpenGL_AA_Demo&  demo     = renderer->aaDemo;
+
+    renderer->aaDemoThisFrame = true;
 
     // Handle commands like `set viewport`, but don't clear any framebuffer attachments.
-    renderer_begin_frame(ws, beginCommands, beginCount);
+    //renderer_begin_frame(ws, beginCommands, beginCount);
+    renderer_begin_frame_internal(ws, beginCommands, beginCount,
+                                  GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (!demo.on) {
+        demo.on = true; // needs to be set before renderer_exec() gets called.
+
         log_debug("Rendering Techniques at %u %u\n", res.w, res.h);
         init_fxaa_pass(renderer->fxaaProgram, res, &demo.fxaaPass);
         render_all_techniques(ws, res, execCommands, execCount);
-        demo.on = true;
     }
 
     // Blit the final color buffer to the default back buffer.
@@ -1201,7 +1388,7 @@ extern void
 renderer_stop_aa_demo(Memory_Arena* ws)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
-    OpenGL_AA_Demo&  demo     = renderer->demo;
+    OpenGL_AA_Demo&  demo     = renderer->aaDemo;
 
     free_fxaa_pass(&demo.fxaaPass);
 
@@ -1216,7 +1403,5 @@ renderer_stop_aa_demo(Memory_Arena* ws)
         f.sampleCount = 0;
     }
 
-
-    // TODO: free framebuffers
     demo.on = false;
 }

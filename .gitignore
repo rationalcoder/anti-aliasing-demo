@@ -7,3 +7,4 @@ build/
 *.swo*
 *.cap
 *imgui.ini*
+run_tree/demo/results/*
