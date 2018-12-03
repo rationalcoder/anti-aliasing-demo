@@ -106,7 +106,9 @@ setup_test_scene()
 
     // TODO(blake): make these macros that clear the render target after queing commands.
     set_render_target(gGame->frameBeginCommands); {
-        cmd_set_clear_color(0.015f, 0.015f, 0.015f, 1.0f);
+        //cmd_set_clear_color(0.015f, 0.015f, 0.015f, 1.0f); // gray (sRGB)
+        cmd_set_clear_color(0.55f, 0.15f, 0.015f, 1.0f); // orange
+        //cmd_set_clear_color(0.55f, 0.15f, 0.015f, 1.0f); // orange
         cmd_set_projection_matrix(glm::perspective(glm::radians(gGame->camera.fov), 16.0f/9.0f, .1f, 100.0f));
         cmd_set_view_matrix(gGame->camera.view_matrix());
         cmd_set_viewport(gGame->clientRes);
@@ -138,7 +140,7 @@ setup_test_scene()
         cmd_render_static_mesh(heliMesh, xform);
 
         xform = mat4();
-        xform = glm::translate(xform, v3(-3.5, -0.2, -.2f));
+        xform = glm::translate(xform, v3(-3.5, -0.2, -.205f));
         //xform = glm::rotate(xform, glm::pi<f32>()/11, v3(0, 0, 1));
         xform = glm::scale(xform, v3(3, 3, .2f));
         cmd_render_static_mesh(boxMesh, xform);
@@ -319,16 +321,20 @@ update_aa_demo(AA_Demo& demo)
         ImGui::Separator();
         ImGui::Spacing();
 
+        Game_Keyboard& kb = gGame->input.keyboard;
+
         for (int i = 0; i < ArraySize(demo.curTechniques); i++) {
             if (demo.curTechniques[i] == AA_INVALID) continue;
             ImGui::PushID(i);
 
+            b32 keyReleased = kb.released((Game_Key)(GK_0 + i));
+
             if (demo.showTechniques) {
-                if (ImGui::Button(fmt_cstr("%s", cstr(demo.curTechniques[i])), v2(-40, 0)))
+                if (ImGui::Button(fmt_cstr("%s", cstr(demo.curTechniques[i])), v2(-40, 0)) || keyReleased)
                     demo.selectedTechnique = demo.curTechniques[i];
             }
             else {
-                if (ImGui::Button(fmt_cstr("AA %d", i), v2(-40, 0)))
+                if (ImGui::Button(fmt_cstr("AA %d", i), v2(-40, 0)) || keyReleased)
                     demo.selectedTechnique = demo.curTechniques[i];
             }
 

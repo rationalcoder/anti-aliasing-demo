@@ -414,10 +414,16 @@ win32_new_frame(Win32_State* state)
         if (keyboard.keys['S'])       keys.set(GK_S);
         if (keyboard.keys['D'])       keys.set(GK_D);
         if (keyboard.keys['E'])       keys.set(GK_E);
+        if (keyboard.keys['0'])       keys.set(GK_0);
         if (keyboard.keys['1'])       keys.set(GK_1);
         if (keyboard.keys['2'])       keys.set(GK_2);
         if (keyboard.keys['3'])       keys.set(GK_3);
         if (keyboard.keys['4'])       keys.set(GK_4);
+        if (keyboard.keys['5'])       keys.set(GK_5);
+        if (keyboard.keys['6'])       keys.set(GK_6);
+        if (keyboard.keys['7'])       keys.set(GK_7);
+        if (keyboard.keys['8'])       keys.set(GK_8);
+        if (keyboard.keys['9'])       keys.set(GK_9);
     }
 }
 

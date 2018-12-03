@@ -9,10 +9,16 @@ enum Game_Key
     GK_S,
     GK_D,
     GK_E,
+    GK_0,
     GK_1,
     GK_2,
     GK_3,
     GK_4,
+    GK_5,
+    GK_6,
+    GK_7,
+    GK_8,
+    GK_9,
     GK_NUM_
 };
 
@@ -127,7 +133,7 @@ struct Game_Input
     Game_Mouse mouse;
 };
 
-inline b32 
+inline b32
 Game_Keyboard::pressed(Game_Key key) const
 {
     b32 wasDown = prev.keys.is_set(key);
@@ -136,7 +142,7 @@ Game_Keyboard::pressed(Game_Key key) const
     return !wasDown && isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::pressed(Game_Key key, Game_Keymod mod, Game_Keymod mod2, Game_Keymod mod3) const
 {
     flag8 prevMod = prev.mod[key];
@@ -148,7 +154,7 @@ Game_Keyboard::pressed(Game_Key key, Game_Keymod mod, Game_Keymod mod2, Game_Key
     return !wasDown && isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::pressed_exactly(Game_Key key, Game_Keymod mod) const
 {
     b32 wasDown = (prev.mod[key] & mod) == mod && prev.keys.is_set(key);
@@ -157,7 +163,7 @@ Game_Keyboard::pressed_exactly(Game_Key key, Game_Keymod mod) const
     return !wasDown && isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::released(Game_Key key) const
 {
     b32 wasDown = prev.keys.is_set(key);
@@ -166,7 +172,7 @@ Game_Keyboard::released(Game_Key key) const
     return wasDown && !isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::released(Game_Key key, Game_Keymod mod, Game_Keymod mod2, Game_Keymod mod3) const
 {
     flag8 prevMod = prev.mod[key];
@@ -178,7 +184,7 @@ Game_Keyboard::released(Game_Key key, Game_Keymod mod, Game_Keymod mod2, Game_Ke
     return wasDown && !isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::released_exactly(Game_Key key, Game_Keymod mod) const
 {
     b32 wasDown = (prev.mod[key] & mod) == mod && prev.keys.is_set(key);
@@ -187,7 +193,7 @@ Game_Keyboard::released_exactly(Game_Key key, Game_Keymod mod) const
     return wasDown && !isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::held(Game_Key key) const
 {
     b32 wasDown = prev.keys.is_set(key);
@@ -196,7 +202,7 @@ Game_Keyboard::held(Game_Key key) const
     return wasDown && isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::held(Game_Key key, Game_Keymod mod, Game_Keymod mod2, Game_Keymod mod3) const
 {
     flag8 prevMod = prev.mod[key];
@@ -208,7 +214,7 @@ Game_Keyboard::held(Game_Key key, Game_Keymod mod, Game_Keymod mod2, Game_Keymod
     return wasDown && isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::held_exactly(Game_Key key, Game_Keymod mod) const
 {
     b32 wasDown = (prev.mod[key] & mod) == mod && prev.keys.is_set(key);
@@ -217,7 +223,7 @@ Game_Keyboard::held_exactly(Game_Key key, Game_Keymod mod) const
     return wasDown && isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::down(Game_Key key) const
 {
     b32 isDown = cur.keys.is_set(key);
@@ -225,7 +231,7 @@ Game_Keyboard::down(Game_Key key) const
     return isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::down(Game_Key key, Game_Keymod mod, Game_Keymod mod2, Game_Keymod mod3) const
 {
     flag8 curMod = cur.mod[key];
@@ -234,7 +240,7 @@ Game_Keyboard::down(Game_Key key, Game_Keymod mod, Game_Keymod mod2, Game_Keymod
     return isDown;
 }
 
-inline b32 
+inline b32
 Game_Keyboard::down_exactly(Game_Key key, Game_Keymod mod) const
 {
     b32 isDown = (cur.mod[key] & mod) == mod && cur.keys.is_set(key);
