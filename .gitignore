@@ -12,3 +12,4 @@ build/
 debug/
 release/
 .vs/
+Makefile

@@ -44,13 +44,13 @@ HEADERS += tanks.h \
 
 SOURCES += win32_tanks.cpp \
 
-INCLUDEPATH += D:/projects/middleware/assimp4/include
+#INCLUDEPATH += D:/projects/middleware/assimp4/include
 #INCLUDEPATH += D:/projects/middleware/SDL2-2.0.4/include
-INCLUDEPATH += D:/projects/middleware/gl3w/include
-INCLUDEPATH += D:/projects/middleware/glm
-INCLUDEPATH += D:/projects/middleware/
+INCLUDEPATH += $$PWD/middleware/gl3w/include
+INCLUDEPATH += $$PWD/middleware/glm
+INCLUDEPATH += $$PWD/middleware/
 
-LIBS += -LD:/projects/middleware/assimp4/lib -lassimp
+#LIBS += -LD:/projects/middleware/assimp4/lib -lassimp
 #LIBS += -LD:/projects/middleware/SDL2-2.0.4/x86_64-w64-mingw32/lib -lSDL2
-LIBS += -LD:\projects\middleware\gl3w\lib64 -lgl3w
+LIBS +=  -L$$PWD/middleware/gl3w/lib64 -lgl3w
 LIBS += -lopengl32 -lgdi32 -luser32
