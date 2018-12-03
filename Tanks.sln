@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.26730.15
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Tanks", "Tanks.vcxproj", "{9EF477FF-3A5D-34F0-BB75-7FB873BAC9AD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9EF477FF-3A5D-34F0-BB75-7FB873BAC9AD}.Debug|x64.ActiveCfg = Debug|x64
+		{9EF477FF-3A5D-34F0-BB75-7FB873BAC9AD}.Debug|x64.Build.0 = Debug|x64
+		{9EF477FF-3A5D-34F0-BB75-7FB873BAC9AD}.Release|x64.ActiveCfg = Release|x64
+		{9EF477FF-3A5D-34F0-BB75-7FB873BAC9AD}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {94DB5A68-0E07-47BE-A910-01A9D65CB4A6}
+	EndGlobalSection
+EndGlobal
