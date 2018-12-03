@@ -20,8 +20,8 @@ constexpr int target_opengl_version_minor() { return 3; }
 
 struct Game_Frame_Stats
 {
-    u32 frameTimes[5]; // us
-    u32_window frameTimeWindow;
+    u64 frameTimes[5]; // us
+    u64_window frameTimeWindow;
 
     Game_Frame_Stats() { frameTimeWindow.reset(frameTimes, ArraySize(frameTimes), 16667); }
 
@@ -42,6 +42,7 @@ struct AA_Demo
 {
     bool showSceneConfig = true;
     bool showTechniques  = false;
+    bool vsync           = true;
 
     AA_Technique techniqueCatalog[AA_VALID_COUNT_] =
     {

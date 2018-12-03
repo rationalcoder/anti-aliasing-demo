@@ -74,6 +74,8 @@ struct Win32_State
     u32 yCenter = 0;
 
     b32 shouldQuit = false;
+
+    PFNWGLSWAPINTERVALEXTPROC wglSwapInterval = nullptr;
 };
 
 struct Win32_Window_Position
@@ -442,7 +444,7 @@ win32_game_loop(Win32_State* state)
     LARGE_INTEGER soundPrev = prev;
     state->imguiPrev        = prev;
 
-    u32 lagMicro  = 0;
+    u64 lagMicro  = 0;
     u32 stepMicro = us_per_update();
 
     b32 firstFrame = true;
@@ -458,16 +460,16 @@ win32_game_loop(Win32_State* state)
         elapsed.QuadPart /= state->frequency.QuadPart;
 
         prev      = current;
-        lagMicro += (u32)elapsed.QuadPart;
+        lagMicro += elapsed.QuadPart;
 
-        f32 dt = lagMicro/1000000.0f;
+        f64 dt = lagMicro / 1000000.0f;
 
-        game_update(dt);
+        game_update((f32)dt);
         if (state->shouldQuit || gGame->shouldQuit)
             return;
 
         // Make sure that the first frame average isn't bogus, not that it really matters.
-        if (!firstFrame) { gGame->frameStats.frameTimeWindow.add((u32)elapsed.QuadPart); }
+        if (!firstFrame) { gGame->frameStats.frameTimeWindow.add(elapsed.QuadPart); }
         else             { firstFrame = false; }
 
         // Consume lag for updating in fixed steps.
@@ -588,14 +590,14 @@ win32_create_window(Win32_State* state, HINSTANCE instance,
     rect.bottom = h;
     rect.right  = w;
 
-    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+    AdjustWindowRect(&rect, styleFlags, FALSE);
 
     HWND hwnd = CreateWindowExA(0, windClass, title, styleFlags,
                                 pos.x, pos.y,
                                 rect.right-rect.left, rect.bottom-rect.top, NULL, NULL, instance, NULL);
     GetClientRect(hwnd, &rect);
-    printf("Client Rect: %u %u\n", rect.right - rect.left, rect.bottom - rect.top);
-    fflush(stdout);
+
+    SetWindowLongA(hwnd, GWL_STYLE, ((GetWindowLongA(hwnd, GWL_STYLE) & ~WS_THICKFRAME) & ~WS_MAXIMIZE) & ~WS_MAXIMIZEBOX);
 
     if (!hwnd)
         return false;
@@ -661,6 +663,8 @@ win32_create_opengl_window(Win32_State* state, HINSTANCE instance, int w, int h)
                     "OpenGL Error", MB_OK | MB_ICONERROR);
         return false;
     }
+
+    gWin32State.wglSwapInterval = wglSwapIntervalEXT;
 
     // TODO: check for multisampling extension.
     // TODO: check for WGL_ARB_create_context_profile
@@ -911,6 +915,13 @@ win32_toggle_fullscreen()
     }
 }
 
+static inline void
+win32_enable_vsync(bool enabled)
+{
+    // TODO: set 1 instead of -1 if the swap control tear extension isn't present.
+    gWin32State.wglSwapInterval(enabled ? -1 : 0);
+}
+
 //} Platform API Implementation
 
 static inline void
@@ -922,6 +933,7 @@ win32_grab_platform(Platform* platform)
     platform->read_entire_file    = win32_read_entire_file;
     platform->write_file          = win32_write_file;
     platform->toggle_fullscreen   = win32_toggle_fullscreen;
+    platform->enable_vsync        = win32_enable_vsync;
 
     platform->initialized = true;
 }
@@ -942,7 +954,7 @@ win32_init(Win32_State* state, Platform* platformOut, Game_Memory* memoryOut,
     state->coreCount = sysInfo.dwNumberOfProcessors;
     state->frequency = frequency;
 
-    win32_setup_console(state);
+    //win32_setup_console(state);
     win32_register_window_classes(instance);
     win32_create_opengl_window(state, instance, windowRes.w, windowRes.h);
     win32_grab_opengl_functions(state);

@@ -263,7 +263,20 @@ struct OpenGL_AA_State
     AA_Technique technique = AA_NONE;
 
     Framebuffer fxaaInputFbo; // for AA_FXAA
-    Framebuffer msaaResolveFbo; // for AA_MSAA with no FXAA
+
+    // NOTE(blake): I decided this was a bad idea. I originally thought it would be nice
+    // to have MSAA work with arbitrary window sizes. To do that, you have to blit to
+    // a separate off-screen buffer and blit that to the final arbitrary resolution.
+    // This is REALLY slow, enough to warrant the disabling of arbitrary window resizing
+    // completely. We should query supported display resolutions somehow and allow
+    // switching to just those.
+    //
+    // Framebuffer msaaResolveFbo; // for AA_MSAA with no FXAA
+
+    // Needed b/c my FXAA shader doesn't do a custom multisample resolve.
+    // NOTE(blake): this makes MSAA + FXAA performance comparisons unfair.
+    //
+    Framebuffer msaaResolveFbo; // for AA_MSAA _with_ FXAA
 
     MSAA_Pass msaaPass;
     FXAA_Pass fxaaPass;

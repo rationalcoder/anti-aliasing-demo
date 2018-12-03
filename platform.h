@@ -71,6 +71,8 @@ typedef PLATFORM_WRITE_FILE(Platform_Write_File);
 #define PLATFORM_TOGGLE_FULLSCREEN(name_) b32 name_()
 typedef PLATFORM_TOGGLE_FULLSCREEN(Platform_Toggle_Fullscreen);
 
+#define PLATFORM_ENABLE_VSYNC(name_) void name_(bool enabled)
+typedef PLATFORM_ENABLE_VSYNC(Platform_Enable_Vsync);
 
 struct Platform
 {
@@ -83,6 +85,7 @@ struct Platform
     Platform_Write_File*       write_file       = nullptr;
 
     Platform_Toggle_Fullscreen* toggle_fullscreen = nullptr;
+    Platform_Enable_Vsync*      enable_vsync      = nullptr;
 
     b32 initialized = false; // useful for asserts
 };
@@ -92,5 +95,5 @@ inline PLATFORM_EXPAND_ARENA(platform_expand_arena)  { return gPlatform->expand_
 inline PLATFORM_READ_ENTIRE_FILE(platform_read_entire_file)  { return gPlatform->read_entire_file(name, arena, size, alignment); }
 inline PLATFORM_WRITE_FILE(platform_write_file) { return gPlatform->write_file(name, data, size); }
 inline PLATFORM_TOGGLE_FULLSCREEN(platform_toggle_fullscreen) { return gPlatform->toggle_fullscreen(); }
-
+inline PLATFORM_ENABLE_VSYNC(platform_enable_vsync) { gPlatform->enable_vsync(enabled); }
 

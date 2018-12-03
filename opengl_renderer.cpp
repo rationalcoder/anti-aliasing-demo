@@ -440,7 +440,8 @@ stage_static_mesh(Render_Static_Mesh* cmd)
         //stagedGroup.diffuseMap  = stage_texture(group.diffuseMap,  TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.emissiveMap = stage_texture(group.emissiveMap, TexOpt_SRGB | TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.normalMap   = stage_texture(group.normalMap,   TexOpt_Mipmap, GL_REPEAT);
-        stagedGroup.specularMap = stage_texture(group.specularMap, TexOpt_Mipmap, GL_REPEAT);
+        //stagedGroup.specularMap = stage_texture(group.specularMap, TexOpt_Mipmap, GL_REPEAT);
+        stagedGroup.specularMap = stage_texture(group.specularMap, TexOpt_SRGB | TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.specularExp = group.specularExp;
     }
 
@@ -817,11 +818,10 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
             // Nothing to do if switching to the same technique.
             if (aaState.technique == cmd->technique) break;
 
+            // NOTE(blake): it's no big deal to keep the fxaa pass around.
             // @TheDumbThing(blake). Resizing a buffer might be faster than re-creating it, for example.
             if (aaState.msaaOn)                    free_msaa_pass(&aaState.msaaPass);
-            // NOTE(blake): it's no big deal to keep the fxaa pass around.
-            //if (aaState.fxaaOn)                    free_fxaa_pass(&aaState.fxaaPass);
-            if (aaState.msaaOn && !aaState.fxaaOn) free_framebuffer(&aaState.msaaResolveFbo);
+            if (aaState.msaaOn && aaState.fxaaOn)  free_framebuffer(&aaState.msaaResolveFbo);
             if (aaState.technique == AA_FXAA)      free_framebuffer(&aaState.fxaaInputFbo);
 
             u32 sampleCount = 1;
@@ -849,13 +849,17 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
                 create_framebuffer(renderer->res, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
                                    1, &aaState.fxaaInputFbo);
             }
-            else if (msaaOn) {
+            else if (msaaOn && fxaaOn) {
                 load_msaa_pass(renderer->res, sampleCount, &aaState.msaaPass);
 
-                if (!fxaaOn) {
-                    create_framebuffer(renderer->res, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
-                                       1, &aaState.msaaResolveFbo);
-                }
+                // No depth and no multisampling. We don't need alpha, but presumably
+                // blitting to a framebuffer with exactly the same format is faster, and
+                // blitting seems to be quite the bottleneck.
+                create_framebuffer(renderer->res, GL_SRGB8_ALPHA8,
+                                   -1, 1, &aaState.msaaResolveFbo);
+            }
+            else if (msaaOn) {
+                load_msaa_pass(renderer->res, sampleCount, &aaState.msaaPass);
             }
 
             aaState.technique = cmd->technique;
@@ -873,6 +877,8 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
             OpenGL_AA_State& aaState = renderer->aaState;
             assert(aaState.technique != AA_INVALID);
 
+            renderer->res = newRes;
+
             // The default back buffer is resized automatically by the window manager.
             if (aaState.technique == AA_NONE)
                 break;
@@ -882,25 +888,18 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
                 create_framebuffer(newRes, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
                                    1, &aaState.fxaaInputFbo);
             }
-
-            if (aaState.msaaOn) {
+            else if (aaState.msaaOn && aaState.fxaaOn) {
+                free_framebuffer(&aaState.msaaResolveFbo);
+                create_framebuffer(newRes, GL_SRGB8_ALPHA8,
+                                   -1, 1, &aaState.msaaResolveFbo);
+            }
+            else if (aaState.msaaOn) {
                 u32 sampleCount = aaState.msaaPass.sampleCount;
 
                 free_msaa_pass(&aaState.msaaPass);
                 load_msaa_pass(newRes, sampleCount, &aaState.msaaPass);
-
-                // If we are doing MSAA only, we need an intermediate buffer to resolve to
-                // since we want to be able to blit the result to an arbitrarily-sized back buffer.
-                // NOTE(blake): only allow fixed resolutions to get rid of this complexity?
-                //
-                if (!aaState.fxaaOn) {
-                    free_framebuffer(&aaState.msaaResolveFbo);
-                    create_framebuffer(newRes, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
-                                       sampleCount, &aaState.msaaResolveFbo);
-                }
             }
 
-            renderer->res = newRes;
             break;
         }
         }
@@ -1054,6 +1053,16 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
                 }
 
                 // TODO: other maps.
+                if (group.specularMap == GL_INVALID_VALUE) {
+                    glUniform1i(program.hasSpecularMap, 0);
+                }
+                else {
+                    glUniform1i(program.hasSpecularMap, 1);
+                    glUniform1i(program.specularMap, 2);
+
+                    glActiveTexture(GL_TEXTURE2);
+                    glBindTexture(GL_TEXTURE_2D, group.specularMap);
+                }
 
                 glDrawElements(GL_TRIANGLES, group.indexCount, group.indexType, (void*)(umm)group.indexStart);
             }
@@ -1113,14 +1122,19 @@ aa_end_frame(OpenGL_Renderer* renderer)
                                       &useBackBuffer, false);
     }
     else if (aaState.msaaOn && aaState.fxaaOn) {
+        Game_Resolution res = renderer->res;
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, aaState.msaaPass.framebuffer);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, aaState.msaaResolveFbo.id);
+        glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, res.w, res.h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
         // @Hack(blake): same hack as the FXAA-only one.
         Framebuffer useBackBuffer;
         useBackBuffer.id = 0;
 
         glDrawBuffer(GL_BACK);
-
         render_fxaa_pass_to_color_fbo(renderer->fxaaProgram, aaState.fxaaPass,
-                                      renderer->res, aaState.msaaPass.colorBuffer,
+                                      res, aaState.msaaResolveFbo.color,
                                       &useBackBuffer, false);
     }
     else { // MSAA only
@@ -1128,17 +1142,13 @@ aa_end_frame(OpenGL_Renderer* renderer)
 
         Game_Resolution res = renderer->res;
 
-        // Resolve
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, aaState.msaaPass.framebuffer);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, aaState.msaaResolveFbo.id);
-        glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, res.w, res.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        // Resolve directly to back buffer. This requires the back buffer to have the
+        // same resolution!!
 
-        // Scale to client resolution (resolving to a different resolution is illegal).
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, aaState.msaaResolveFbo.id);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, aaState.msaaPass.framebuffer);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK);
-        glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, gGame->clientRes.w, gGame->clientRes.h,
-                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, res.w, res.h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0); // just cleanup
     }

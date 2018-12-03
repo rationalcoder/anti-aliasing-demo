@@ -50,7 +50,6 @@ read_obj_file(const char* path)
     buffer32 buffer = read_file_buffer(path);
 
     return parse_obj_file(buffer, PostProcess_GenNormals | PostProcess_GenTangents | PostProcess_FlipUVs);
-    //return parse_obj_file(buffer, PostProcess_GenNormals);
 }
 
 // For stuff like setting a default specular coefficient.
@@ -89,16 +88,19 @@ setup_test_scene()
     OBJ_File heli = read_obj_file("demo/assets/hheli.obj");
     OBJ_File box  = read_obj_file("demo/assets/box.obj");
     OBJ_File jeep = read_obj_file("demo/assets/jeep.obj");
+    OBJ_File cyborg = read_obj_file("demo/assets/cyborg/cyborg.obj");
 
     //MTL_File bobMtl  = read_mtl_file(cat("demo/assets/", bob.mtllib));
-    MTL_File heliMtl = read_mtl_file(cat("demo/assets/", heli.mtllib));
-    MTL_File boxMtl  = read_mtl_file(cat("demo/assets/", box.mtllib));
-    MTL_File jeepMtl = read_mtl_file(cat("demo/assets/", jeep.mtllib));
+    MTL_File heliMtl   = read_mtl_file(cat("demo/assets/", heli.mtllib));
+    MTL_File boxMtl    = read_mtl_file(cat("demo/assets/", box.mtllib));
+    MTL_File jeepMtl   = read_mtl_file(cat("demo/assets/", jeep.mtllib));
+    MTL_File cyborgMtl = read_mtl_file(cat("demo/assets/cyborg/", cyborg.mtllib));
 
     //Static_Mesh bobMesh  = load_static_mesh(bob, bobMtl, "demo/assets/");
-    Static_Mesh heliMesh = load_static_mesh(heli, heliMtl, "demo/assets/");
-    Static_Mesh boxMesh  = load_static_mesh(box,  boxMtl,  "demo/assets/");
-    Static_Mesh jeepMesh = load_static_mesh(jeep, jeepMtl, "demo/assets/");
+    Static_Mesh heliMesh   = load_static_mesh(heli, heliMtl, "demo/assets/");
+    Static_Mesh boxMesh    = load_static_mesh(box,  boxMtl,  "demo/assets/");
+    Static_Mesh jeepMesh   = load_static_mesh(jeep, jeepMtl, "demo/assets/");
+    Static_Mesh cyborgMesh = load_static_mesh(cyborg, cyborgMtl, "demo/assets/cyborg/");
 
     gGame->allocator.data = &gMem->perm;
 
@@ -149,6 +151,13 @@ setup_test_scene()
 
         xform = glm::scale(xform, v3(.2f));
         cmd_render_static_mesh(jeepMesh, xform);
+
+        xform = mat4();
+        xform = glm::translate(xform, v3(-2, -2, 0));
+        xform = glm::rotate(xform, glm::pi<f32>()/2, v3(1, 0, 0));
+        xform = glm::rotate(xform, glm::pi<f32>()/1.5f, v3(0, -1, 0));
+        xform = glm::scale(xform, v3(.6f));
+        cmd_render_static_mesh(cyborgMesh, xform);
 
         // TODO(blake): make debug geometry more systemic.
         //Debug_Normals boxNormals = make_debug_normals(boxMesh);
@@ -245,6 +254,25 @@ start_new_demo(AA_Demo& demo)
 static void
 update_aa_demo(AA_Demo& demo)
 {
+    if (!demo.on) {
+        int corner = 1;
+        ImVec2 overlayPos = ImVec2((corner & 1) ? ImGui::GetIO().DisplaySize.x - 10 : 10,
+                                   (corner & 2) ? ImGui::GetIO().DisplaySize.y - 10 : 10);
+        ImVec2 overlayPosPivot = ImVec2((corner & 1) ? 1.0f : 0.0f, (corner & 2) ? 1.0f : 0.0f);
+        ImGui::SetNextWindowPos(overlayPos, ImGuiCond_Always, overlayPosPivot);
+        ImGui::SetNextWindowBgAlpha(0.3f);
+        if (ImGui::Begin("", 0, (corner != -1 ? ImGuiWindowFlags_NoMove : 0) |
+                                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+                                ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
+            const char* frameTime = fmt_cstr("Frame Time: %f ms (%f FPS)",
+                                             gGame->frameStats.frameTimeWindow.average / 1000.0f,
+                                             gGame->frameStats.fps());
+            ImGui::Text(frameTime);
+            ImGui::End();
+        }
+    }
+
     ImGui::SetNextWindowSize(v2(150, 370), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(v2(5, 5), ImGuiCond_FirstUseEver);
 
@@ -252,12 +280,8 @@ update_aa_demo(AA_Demo& demo)
                                      ImGuiWindowFlags_NoResize);
 
     if (!demo.on) {
-        if (ImGui::Button("Toggle Fullscreen", v2(-1, 0))) {
+        if (ImGui::Button("Toggle Fullscreen", v2(-1, 0)))
             platform_toggle_fullscreen();
-            set_render_target(gGame->frameBeginCommands);
-            //cmd_resize_buffers(closestResolution.w, closestResolution.h);
-            cmd_resize_buffers(1920, 1080);
-        }
 
         if (ImGui::Button("Start Demo", v2(-1, 0))) {
             pick_technique_set(demo);
@@ -266,7 +290,6 @@ update_aa_demo(AA_Demo& demo)
 
         ImGui::Checkbox("Show Techniques", &demo.showTechniques);
 
-#if 1 // Technique preview is slow (due to double blitting) and broken
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
@@ -275,12 +298,16 @@ update_aa_demo(AA_Demo& demo)
 
         set_render_target(gGame->frameBeginCommands);
 
-        for (u32 i = 1; i < AA_VALID_COUNT_; i++) {
+        for (u32 i = 1; i < AA_COUNT_; i++) {
             const char* name = cstr((AA_Technique)i);
             if (ImGui::Button(fmt_cstr("%s##%s", name, name), v2(-1, 0)))
                 cmd_set_aa_technique((AA_Technique)i);
         }
-#endif
+
+        ImGui::Spacing();
+
+        if (ImGui::Checkbox("Vsync Enabled", &demo.vsync))
+            platform_enable_vsync(demo.vsync);
     }
     else {
         if (ImGui::Button("Back", v2(-1, 0))) {
@@ -362,7 +389,7 @@ update_aa_demo(AA_Demo& demo)
     }
 
     ImGui::End();
-    // ImGui::ShowDemoWindow();
+    //ImGui::ShowDemoWindow();
 
     // TODO: options to override this.
     demo.res = gGame->clientRes;
@@ -371,6 +398,8 @@ update_aa_demo(AA_Demo& demo)
 extern void
 game_update(f32 dt)
 {
+    (void)dt;
+
     Game_Keyboard& kb = gGame->input.keyboard;
     if (kb.released(GK_ESCAPE)) {
         gGame->shouldQuit = true;
@@ -380,23 +409,25 @@ game_update(f32 dt)
     if (gGame->demo.on) return;
 
 
-    f32 camSpeed = 3 * dt; // XXX
+    // TODO: figure out why the speed is dependent on the framerate, since the
+    // speed is multiplied by dt...
+    f32 camDp = 3.0f * 1 / gGame->frameStats.fps();
     Camera& camera = gGame->camera;
 
     f32 up      = 0;
     f32 right   = 0;
     f32 forward = 0;
 
-    if (kb.down(GK_W)) forward += camSpeed;
-    if (kb.down(GK_S)) forward -= camSpeed;
-    if (kb.down(GK_A)) right   -= camSpeed;
-    if (kb.down(GK_D)) right   += camSpeed;
-    if (kb.down(GK_E)) up      += camSpeed;
+    if (kb.down(GK_W)) forward += camDp;
+    if (kb.down(GK_S)) forward -= camDp;
+    if (kb.down(GK_A)) right   -= camDp;
+    if (kb.down(GK_D)) right   += camDp;
+    if (kb.down(GK_E)) up      += camDp;
 
     v3 movement(up, right, forward);
 
     if (movement.x || movement.y || movement.z) {
-        movement = glm::normalize(v3(up, right, forward)) * camSpeed;
+        movement = glm::normalize(v3(up, right, forward)) * camDp;
 
         camera.up_by(movement.x);
         camera.right_by(movement.y);
@@ -410,7 +441,6 @@ game_update(f32 dt)
 
     if (mouse.drag_started())
         smoother.reset_mouse_drag();
-
 
     if (curMouse.dragging) {
         f32 xDrag = map_bilateral(curMouse.xDrag, gGame->clientRes.w);
@@ -437,10 +467,14 @@ game_resize(Game_Resolution clientRes)
     gGame->closestRes = closestResolution;
     gGame->clientRes  = clientRes;
 
+    // NOTE(blake): this resize code assumes the window can only be resized
+    // to supported resolutions!!
+
     set_render_target(gGame->frameBeginCommands);
     cmd_set_viewport(0, 0, clientRes.w, clientRes.h);
-    //cmd_resize_buffers(closestResolution.w, closestResolution.h);
-    log_debug("Set Viewport: %u %u\n", clientRes.w, clientRes.h);
+    cmd_resize_buffers(clientRes.w, clientRes.h);
+    //log_debug("Resize To: %u %u\n", closestResolution.w, closestResolution.h);
+    //log_debug("Set Viewport: %u %u\n", clientRes.w, clientRes.h);
 }
 
 extern void

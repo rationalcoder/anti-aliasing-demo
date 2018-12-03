@@ -2,9 +2,13 @@
 *.o
 out
 *.zip
-build/
 *.swp*
 *.swo*
 *.cap
 *imgui.ini*
+.qmake*
 run_tree/demo/results/*
+build/
+debug/
+release/
+.vs/

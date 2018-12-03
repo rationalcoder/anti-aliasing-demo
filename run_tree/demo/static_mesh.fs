@@ -35,14 +35,25 @@ void main()
         float nDotL = max(dot(n, l), 0.0);
         float hDotN = max(dot(h, n), 0.0);
 
-        vec3 diffuseComponent  = nDotL * u_pointLightC.rgb * diffuse.rgb;
-        vec3 specularComponent = float(nDotL > 0.0) * pow(hDotN, u_specularExp) * u_pointLightC.rgb;
+        vec3 diffuseComponent  = nDotL * diffuse.rgb;
+        vec3 specularComponent;
+        if (u_hasSpecularMap) {
+            float shine =  texture(u_specular, v_uv).r;
+            float spec  = float(nDotL > 0.0) * pow(hDotN, 200) * shine;
+            specularComponent = spec * u_pointLightC.rgb;
+        }
+        else {
+            specularComponent = float(nDotL > 0.0) * pow(hDotN, u_specularExp) * u_pointLightC.rgb;
+        }
+
+        // float shine = u_hasSpecularMap ? texture(u_specular, v_uv).r * 16 : u_specularExp;
 
         float d  = v_lightDist;
         float d2 = d * d;
-        float attenuation =  1.0 / (1.0 + .1*d + .05*d2);
+        float attenuation =  1.0 / (1.0 + .3*d + .05*d2);
         //float attenuation =  1.0;
         gl_FragColor = vec4(max(ambient, attenuation * (diffuseComponent + specularComponent)), diffuse.a);
+        //gl_FragColor = vec4(u_hasSpecularMap ? texture(u_specular, v_uv).r : 0, 0, 0, 1);
     }
     else {
         gl_FragColor = u_solid ? u_color : texture(u_diffuse, v_uv);
