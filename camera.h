@@ -11,6 +11,9 @@ struct Camera
     glm::vec3 up = glm::vec3(0, 0, 1);
     glm::vec3 direction = glm::vec3(0, 1, 0);
     glm::vec3 position = glm::vec3(0, 0, 0);
+
+    glm::vec3 fpsUp = glm::vec3(0, 0, 1);
+    bool fps = true;
     float fov = 65;
 
     void translate(float x, float y, float z);
@@ -19,6 +22,7 @@ struct Camera
     void forward_by(float units);
     void right_by(float units);
 
+    // @Slow. All of these are currently crap, but it probably doesn't matter.
     void yaw_by(float thetaRad);
     void pitch_by(float thetaRad);
     void roll_by(float thetaRad);
@@ -198,6 +202,7 @@ look_at(const glm::vec3& target)
 inline glm::mat4 Camera::
 view_matrix()
 {
-    // up = glm::vec3(0, 0, 1);
+    if (fps) up = fpsUp;
+
     return glm::lookAt(position, position + direction, up);
 }

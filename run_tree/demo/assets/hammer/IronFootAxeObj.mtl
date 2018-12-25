@@ -6,6 +6,7 @@ d 1
 illum 2
 Ka 0 0 0
 Ks 0.0341772 0.0341772 0.0341772
+
 newmtl back
 Kd 0 0 0
 Ns 256
@@ -13,6 +14,7 @@ d 1
 illum 2
 Ka 0 0 0
 Ks 0.25 0.25 0.25
+
 newmtl red
 Kd 0.332278 0 0
 Ns 256
@@ -20,3 +22,5 @@ d 1
 illum 2
 Ka 0 0 0
 Ks 0.1 0.1 0.1
+
+

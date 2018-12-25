@@ -106,7 +106,7 @@ free_mesh(Raw_Mesh* mesh)
 
 extern b32
 load_texture(const aiScene* scene, u32 meshIndex, const char* texdir,
-             aiTextureType type,  Texture_Result* result)
+             aiTextureType type, Texture_Result* result)
 {
     u32 matIndex = scene->mMeshes[meshIndex]->mMaterialIndex;
     const aiMaterial* material = scene->mMaterials[matIndex];

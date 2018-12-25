@@ -660,7 +660,7 @@ load_fxaa_pass(FXAA_Pass* pass, Game_Resolution res)
     // NOTE: these are _crazy_ inputs to FXAA.
     // Typically, lumaThresh = .5, mulReduce = 1/8, minReduce = 1/256, maxSpan = 5
     // These are set the way they are to show the artifacts introduced in order to
-    // get reasonable anti-aliasing on the muffler thing in the jeeps.
+    // get reasonable anti-aliasing on the muffler thing on the jeeps.
     glUniform1f(locations.lumaThreshold, 0.01f);
     glUniform1f(locations.mulReduce, 1.0f / 64.0f);
     glUniform1f(locations.minReduce, 1.0f / 256.0f);

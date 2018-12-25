@@ -1,5 +1,7 @@
 #version 430 core
 
+in vec2 v_texCoord;
+
 uniform sampler2D u_colorTexture; 
 
 uniform vec2 u_texelStep;
@@ -10,8 +12,6 @@ uniform float u_lumaThreshold;
 uniform float u_mulReduce;
 uniform float u_minReduce;
 uniform float u_maxSpan;
-
-in vec2 v_texCoord;
 
 // see FXAA
 // http://developer.download.nvidia.com/assets/gamedev/files/sdk/11/FXAA_WhitePaper.pdf
