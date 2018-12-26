@@ -1,0 +1,17 @@
+Better keyboard input handling
+
+IMGUI cursor support
+
+Better asset management:
+    - pak files
+    - assimp pre-processor
+
+Editor / Picking / IMGUI
+
+Rendering:
+    - Debug geometry
+    - Lighting
+    - Animation
+    - Shadows
+    
+Stepping instead of dt
