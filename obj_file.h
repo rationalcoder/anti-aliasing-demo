@@ -4,14 +4,14 @@
 
 struct OBJ_Material_Group
 {
-    buffer32 material;
+    string32 material;
     u32 startingIndex;
 };
 
 struct OBJ_File
 {
     const char* error;
-    buffer32 mtllib;
+    string32 mtllib;
 
     OBJ_Material_Group* groups;
 
@@ -30,7 +30,7 @@ struct OBJ_File
 
 struct MTL_Material
 {
-    buffer32 name;
+    string32 name;
 
     v3 ambientColor;
     v3 diffuseColor;
@@ -41,11 +41,11 @@ struct MTL_Material
     f32 opacity;
     int illum;
 
-    buffer32 ambientMap;
-    buffer32 diffuseMap;
-    buffer32 specularMap;
-    buffer32 emissiveMap;
-    buffer32 normalMap;
+    string32 ambientMap;
+    string32 diffuseMap;
+    string32 specularMap;
+    string32 emissiveMap;
+    string32 normalMap;
 };
 
 struct MTL_File
@@ -65,8 +65,8 @@ enum Post_Process_Flags : u32
 };
 
 extern OBJ_File
-parse_obj_file(buffer32 buffer, u32 processFlags = 0);
+obj_load(buffer32 buffer, u32 processFlags = 0);
 
 extern MTL_File
-parse_mtl_file(buffer32 buffer);
+mtl_load(buffer32 buffer);
 

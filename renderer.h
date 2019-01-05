@@ -64,9 +64,6 @@ enum AA_Technique : u32
     AA_MSAA_4X,
     AA_MSAA_8X,
     AA_MSAA_16X,
-    AA_MSAA_2X_FXAA,
-    AA_MSAA_4X_FXAA,
-    AA_MSAA_8X_FXAA,
 
     AA_COUNT_,
     AA_VALID_COUNT_ = AA_COUNT_-1, // excluding AA_INVALID (0)

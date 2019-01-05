@@ -224,12 +224,11 @@ struct FXAA_Pass
     // Uniforms
     bool on           = true;
     bool showEdges    = false;
-    //f32 lumaThreshold = 1/8.0f;
-    f32 lumaThreshold = 1/2.0f;
+    f32 lumaThreshold = 1/8.0f;
     //f32 mulReduce     = 1.0f; // super sharp/weak
-    f32 mulReduce     = 1.0f/3.0f;
+    f32 mulReduce     = 1.0f/8.0f;
     f32 minReduce     = 1/256.0f;
-    f32 maxSpan       = 6;
+    f32 maxSpan       = 5;
 };
 
 struct MSAA_Pass
@@ -248,16 +247,6 @@ struct Framebuffer
     u32 sampleCount = 0;
 };
 
-struct OpenGL_AA_Demo
-{
-    b32 on = false;
-
-    FXAA_Pass fxaaPass;
-    MSAA_Pass msaaPass;
-
-    Framebuffer finalColorFramebuffers[AA_COUNT_]; // [AA_INVALID] == invalid values.
-};
-
 struct OpenGL_AA_State
 {
     AA_Technique technique = AA_NONE;
@@ -272,11 +261,6 @@ struct OpenGL_AA_State
     // switching to just those.
     //
     // Framebuffer msaaResolveFbo; // for AA_MSAA with no FXAA
-
-    // Needed b/c my FXAA shader doesn't do a custom multisample resolve.
-    // NOTE(blake): this makes MSAA + FXAA performance comparisons unfair.
-    //
-    Framebuffer msaaResolveFbo; // for AA_MSAA _with_ FXAA
 
     MSAA_Pass msaaPass;
     FXAA_Pass fxaaPass;
@@ -307,10 +291,5 @@ struct OpenGL_Renderer
 
     // TODO(blake): more lights! Light groups!
     struct Render_Point_Light* pointLight;
-
-
-    // @Temporary
-    OpenGL_AA_Demo aaDemo;
-    b32 aaDemoThisFrame = false;
 };
 

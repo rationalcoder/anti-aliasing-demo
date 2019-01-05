@@ -15,3 +15,5 @@ Rendering:
     - Shadows
     
 Stepping instead of dt
+
+Decouple platform input polling from game update and rendering

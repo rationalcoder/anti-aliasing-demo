@@ -9,6 +9,10 @@
 #include <glm/mat3x3.hpp>
 #include <glm/mat4x4.hpp>
 
+// NOTE(bmartin): the ctor versions of constructors are pointless on classes like Array_View.
+// It turns out that you can't get out default initialization of members if you add even one
+// custom constructor. C++ continues to impress...
+
 using v2 = glm::vec2;
 using v3 = glm::vec3;
 using v4 = glm::vec4;
@@ -107,7 +111,7 @@ Bitset<N_>::none() const
 template <typename T_, typename Size_ = u32>
 struct Array_View
 {
-    T_* data;
+    T_*   data;
     Size_ size;
 
     Array_View(ctor) {}
@@ -115,7 +119,7 @@ struct Array_View
     Array_View(T_* data, Size_ size) : data(data), size(size) {}
 
     const T_& operator[](Size_ i) const { return data[i]; }
-     T_&      operator[](Size_ i)       { return data[i]; }
+    T_&       operator[](Size_ i)       { return data[i]; }
 
     const T_* begin() const { return data; }
     T_*       begin()       { return data; }
@@ -126,7 +130,8 @@ struct Array_View
     const T_* cbegin() const { return data; }
     T_*       cend()   const { return data + size; }
 
-    operator bool() { return data != nullptr; }
+    explicit operator bool() { return data != nullptr; }
+    explicit operator struct string32();
 };
 
 template <typename T_> using view8  = Array_View<T_, u8>;
@@ -139,9 +144,40 @@ using buffer16 = Array_View<u8, u16>;
 using buffer32 = Array_View<u8, u32>;
 using buffer64 = Array_View<u8, u64>;
 
-// TODO(blake): first class type. This is just so I can write code that won't
-// have to change once I get around to this.
-using string32 = buffer32;
+// @Duplication: for better error messages and less meta-programming in the Array_View class
+// to get limited string32 -> buffer32 conversions. It's not a big deal.
+struct string32
+{
+    char* data;
+    u32   size;
+
+    string32(ctor) {}
+    string32() : data(nullptr), size(0) {}
+    string32(char* data, u32 size) : data(data), size(size) {}
+
+    const char& operator[](u32 i) const { return data[i]; }
+    char&       operator[](u32 i)       { return data[i]; }
+
+    const char* begin() const { return data; }
+    char*       begin()       { return data; }
+
+    const char* end() const { return data + size; }
+    char*       end()       { return data + size; }
+
+    const char* cbegin() const { return data; }
+    char*       cend()   const { return data + size; }
+
+    // TODO: explicit conversion to buffers with smaller size reps;
+    explicit operator bool()     { return data != nullptr; }
+    operator buffer32() { return buffer32((u8*)data, size); }
+    operator buffer64() { return buffer64((u8*)data, size); }
+};
+
+template <> inline
+Array_View<u8, u32>::operator string32()
+{
+    return string32((char*)data, size);
+}
 
 template <typename T_> inline Array_View<T_, u32>
 view_of(T_* data, u32 size) { return Array_View<T_, u32>(data, size); }
@@ -222,3 +258,4 @@ using u16_window = Value_Window<u16>;
 using u32_window = Value_Window<u32>;
 using u64_window = Value_Window<u64>;
 using f32_window = Value_Window<f32>;
+

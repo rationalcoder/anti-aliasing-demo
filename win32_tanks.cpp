@@ -180,8 +180,6 @@ win32_event_callback(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         gWin32State.latestClientRes.w  = w;
         gWin32State.latestClientRes.h  = h;
-        printf("%u %u\n", w, h);
-        fflush(stdout);
 
         return 0;
     }
@@ -391,6 +389,26 @@ win32_new_frame(Win32_State* state)
         if (state->dragging)
             win32_center_cursor();
     }
+    else {
+        ImGuiMouseCursor imguiCursor = ImGui::GetMouseCursor();
+
+        // Show OS mouse cursor
+        LPTSTR win32Cursor = IDC_ARROW;
+        switch (imguiCursor)
+        {
+        case ImGuiMouseCursor_None:         win32Cursor = NULL;         break;
+        case ImGuiMouseCursor_Arrow:        win32Cursor = IDC_ARROW;    break;
+        case ImGuiMouseCursor_TextInput:    win32Cursor = IDC_IBEAM;    break;
+        case ImGuiMouseCursor_ResizeAll:    win32Cursor = IDC_SIZEALL;  break;
+        case ImGuiMouseCursor_ResizeEW:     win32Cursor = IDC_SIZEWE;   break;
+        case ImGuiMouseCursor_ResizeNS:     win32Cursor = IDC_SIZENS;   break;
+        case ImGuiMouseCursor_ResizeNESW:   win32Cursor = IDC_SIZENESW; break;
+        case ImGuiMouseCursor_ResizeNWSE:   win32Cursor = IDC_SIZENWSE; break;
+        case ImGuiMouseCursor_Hand:         win32Cursor = IDC_HAND;     break;
+        }
+
+        SetCursor(LoadCursorA(NULL, win32Cursor));
+    }
 
     bit32& keys = gameKeyboard.cur.keys;
     flag8* mod  = gameKeyboard.cur.mod;
@@ -409,6 +427,19 @@ win32_new_frame(Win32_State* state)
         // @BugProne
         memset(mod, repeatedMod, sizeof(gameKeyboard.cur.mod));
         if (keyboard.keys[VK_ESCAPE]) keys.set(GK_ESCAPE);
+        if (keyboard.keys[VK_RETURN]) keys.set(GK_RETURN);
+        if (keyboard.keys[VK_F1])     keys.set(GK_F1);
+        if (keyboard.keys[VK_F2])     keys.set(GK_F2);
+        if (keyboard.keys[VK_F3])     keys.set(GK_F3);
+        if (keyboard.keys[VK_F4])     keys.set(GK_F4);
+        if (keyboard.keys[VK_F5])     keys.set(GK_F5);
+        if (keyboard.keys[VK_F6])     keys.set(GK_F6);
+        if (keyboard.keys[VK_F7])     keys.set(GK_F7);
+        if (keyboard.keys[VK_F8])     keys.set(GK_F8);
+        if (keyboard.keys[VK_F9])     keys.set(GK_F9);
+        if (keyboard.keys[VK_F10])    keys.set(GK_F10);
+        if (keyboard.keys[VK_F11])    keys.set(GK_F11);
+        if (keyboard.keys[VK_F12])    keys.set(GK_F12);
         if (keyboard.keys['W'])       keys.set(GK_W);
         if (keyboard.keys['A'])       keys.set(GK_A);
         if (keyboard.keys['S'])       keys.set(GK_S);
@@ -451,7 +482,7 @@ win32_game_loop(Win32_State* state)
     state->imguiPrev        = prev;
 
     u64 lagMicro  = 0;
-    u32 stepMicro = us_per_update();
+    u32 stepMicro = us_per_step();
 
     b32 firstFrame = true;
     for (;;) {
@@ -470,7 +501,8 @@ win32_game_loop(Win32_State* state)
 
         f64 dt = lagMicro / 1000000.0f;
 
-        game_update((f32)dt);
+        game_tick((f32)dt);
+
         if (state->shouldQuit || gGame->shouldQuit)
             return;
 
@@ -478,10 +510,12 @@ win32_game_loop(Win32_State* state)
         if (!firstFrame) { gGame->frameStats.frameTimeWindow.add(elapsed.QuadPart); }
         else             { firstFrame = false; }
 
+        constexpr f32 stepDt = us_per_step()/1000000.0f;
+
         // Consume lag for updating in fixed steps.
         for (; lagMicro >= stepMicro; lagMicro -= stepMicro) {
             if (should_step())
-                game_step();
+                game_step(stepDt);
         }
 
         LARGE_INTEGER soundCurrent;
@@ -498,11 +532,15 @@ win32_game_loop(Win32_State* state)
 #if USING_IMGUI
         ImGui::Render();
 
-        if (should_step()) { game_render(lagMicro/(f32)stepMicro, ImGui::GetDrawData()); }
-        else               { game_render(1, ImGui::GetDrawData()); }
+        // The renderer takes a frame ratio that indicates where we are between the current frame
+        // and the next frame. This is important for smooth visual animation since we update in fixed steps.
+        // See gameprogrammingpatterns for more info.
+        //
+        if (should_step()) { game_render(stepDt, lagMicro/(f32)stepMicro, ImGui::GetDrawData()); }
+        else               { game_render(stepDt, 1, ImGui::GetDrawData()); }
 #else
-        if (should_step()) { game_render(lagMicro/(f32)stepMicro, nullptr); }
-        else               { game_render(1, nullptr); }
+        if (should_step()) { game_render(stepDt, lagMicro/(f32)stepMicro, nullptr); }
+        else               { game_render(stepDt, 1, nullptr); }
 #endif
 
         game_end_frame();

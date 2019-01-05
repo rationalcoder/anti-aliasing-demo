@@ -75,11 +75,11 @@ load_program(const char* vsFile, const char* fsFile, GLuint* program)
 
     GLuint vs = GL_INVALID_VALUE;
     if (!load_shader(vsFile, GL_VERTEX_SHADER, &vs)) return false;
-    defer( glDeleteShader(vs) );
+    defer( glDeleteShader(vs); );
 
     GLuint fs = GL_INVALID_VALUE;
     if (!load_shader(fsFile, GL_FRAGMENT_SHADER, &fs)) return false;
-    defer( glDeleteShader(fs) );
+    defer( glDeleteShader(fs); );
 
     char errorBuffer[256];
     if (!create_and_link_program(vs, fs, program)) {
@@ -391,7 +391,6 @@ stage_static_mesh(Render_Static_Mesh* cmd)
         glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
     }
 
-    // TODO: tangents
     if (mesh.has_tangents()) {
         GLuint tangents = GL_INVALID_VALUE;
         glGenBuffers(1, &tangents);
@@ -419,7 +418,7 @@ stage_static_mesh(Render_Static_Mesh* cmd)
 
     Staged_Static_Mesh* stagedMesh = allocate_new(Staged_Static_Mesh);
     stagedMesh->vao        = vao;
-    stagedMesh->groups     = allocate_array(groupCount, Staged_Colored_Index_Group);
+    stagedMesh->groups     = allocate_new_array(groupCount, Staged_Colored_Index_Group);
     stagedMesh->groupCount = groupCount;
 
     for (u32 i = 0; i < mesh.material->coloredGroupCount; i++) {
@@ -437,10 +436,8 @@ stage_static_mesh(Render_Static_Mesh* cmd)
         }
 
         stagedGroup.diffuseMap  = stage_texture(group.diffuseMap,  TexOpt_SRGB | TexOpt_Mipmap, GL_REPEAT);
-        //stagedGroup.diffuseMap  = stage_texture(group.diffuseMap,  TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.emissiveMap = stage_texture(group.emissiveMap, TexOpt_SRGB | TexOpt_Mipmap, GL_REPEAT);
-        stagedGroup.normalMap   = stage_texture(group.normalMap,   TexOpt_Mipmap, GL_REPEAT);
-        //stagedGroup.specularMap = stage_texture(group.specularMap, TexOpt_Mipmap, GL_REPEAT);
+        stagedGroup.normalMap   = stage_texture(group.normalMap,                 TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.specularMap = stage_texture(group.specularMap, TexOpt_SRGB | TexOpt_Mipmap, GL_REPEAT);
         stagedGroup.specularExp = group.specularExp;
     }
@@ -453,7 +450,7 @@ stage_static_mesh(Render_Static_Mesh* cmd)
 static inline b32
 load_debug_cube_buffers(GLuint* vertexBuffer, GLuint* indexBuffer)
 {
-    Static_Mesh cube = push_debug_cube(.5f);
+    Static_Mesh cube = make_cube(.5f);
 
     GLuint vbo = GL_INVALID_VALUE;
     GLuint ebo = GL_INVALID_VALUE;
@@ -507,10 +504,10 @@ load_imgui(ImGui_Resources* res)
 
     GLuint vs = GL_INVALID_VALUE;
     GLuint fs = GL_INVALID_VALUE;
-    if (!load_shader("demo/imgui.vs", GL_VERTEX_SHADER,   &vs)) return false;
+    if (!load_shader("assets/shaders/imgui.vs", GL_VERTEX_SHADER,   &vs)) return false;
     defer( glDeleteShader(vs); );
 
-    if (!load_shader("demo/imgui.fs", GL_FRAGMENT_SHADER, &fs)) return false;
+    if (!load_shader("assets/shaders/imgui.fs", GL_FRAGMENT_SHADER, &fs)) return false;
     defer( glDeleteShader(fs); );
 
     if (!create_and_link_program(vs, fs, &program.id)) return false;
@@ -745,14 +742,14 @@ renderer_init(Memory_Arena* storage, Memory_Arena* workspace)
 
     Shader_Catalog& catalog = renderer->shaderCatalog;
 
-    if (!load_shader("demo/basic.vs",           GL_VERTEX_SHADER,   &catalog.basicVertexShader))          return false;
-    if (!load_shader("demo/basic_instanced.vs", GL_VERTEX_SHADER,   &catalog.basicInstancedVertexShader)) return false;
-    if (!load_shader("demo/static_mesh.vs",     GL_VERTEX_SHADER,   &catalog.staticMeshVertexShader))     return false;
-    if (!load_shader("demo/fxaa.vs",            GL_VERTEX_SHADER,   &catalog.fxaaVertexShader))           return false;
+    if (!load_shader("assets/shaders/basic.vs",           GL_VERTEX_SHADER,   &catalog.basicVertexShader))          return false;
+    if (!load_shader("assets/shaders/basic_instanced.vs", GL_VERTEX_SHADER,   &catalog.basicInstancedVertexShader)) return false;
+    if (!load_shader("assets/shaders/static_mesh.vs",     GL_VERTEX_SHADER,   &catalog.staticMeshVertexShader))     return false;
+    if (!load_shader("assets/shaders/fxaa.vs",            GL_VERTEX_SHADER,   &catalog.fxaaVertexShader))           return false;
 
-    if (!load_shader("demo/solid.fs",           GL_FRAGMENT_SHADER, &catalog.solidFramentShader))         return false;
-    if (!load_shader("demo/static_mesh.fs",     GL_FRAGMENT_SHADER, &catalog.staticMeshFragmentShader))   return false;
-    if (!load_shader("demo/fxaa.fs",            GL_FRAGMENT_SHADER, &catalog.fxaaFragmentShader))         return false;
+    if (!load_shader("assets/shaders/solid.fs",           GL_FRAGMENT_SHADER, &catalog.solidFramentShader))         return false;
+    if (!load_shader("assets/shaders/static_mesh.fs",     GL_FRAGMENT_SHADER, &catalog.staticMeshFragmentShader))   return false;
+    if (!load_shader("assets/shaders/fxaa.fs",            GL_FRAGMENT_SHADER, &catalog.fxaaFragmentShader))         return false;
 
     if (!load_lines_program(catalog, &renderer->linesProgram))            return false;
     if (!load_cubes_program(catalog, &renderer->cubesProgram))            return false;
@@ -808,7 +805,6 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
             break;
         }
         case RenderCommand_Set_AA_Technique: {
-            if (renderer->aaDemo.on) break;
 
             Set_AA_Technique* cmd = render_command_after<Set_AA_Technique>(header);
             assert(cmd->technique != AA_INVALID);
@@ -821,7 +817,6 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
             // NOTE(blake): it's no big deal to keep the fxaa pass around.
             // @TheDumbThing(blake). Resizing a buffer might be faster than re-creating it, for example.
             if (aaState.msaaOn)                    free_msaa_pass(&aaState.msaaPass);
-            if (aaState.msaaOn && aaState.fxaaOn)  free_framebuffer(&aaState.msaaResolveFbo);
             if (aaState.technique == AA_FXAA)      free_framebuffer(&aaState.fxaaInputFbo);
 
             u32 sampleCount = 1;
@@ -832,10 +827,7 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
             case AA_MSAA_4X:      sampleCount = 4;  break;
             case AA_MSAA_8X:      sampleCount = 8;  break;
             case AA_MSAA_16X:     sampleCount = 16; break;
-            case AA_MSAA_2X_FXAA: sampleCount = 2; fxaaOn = true; break;
-            case AA_MSAA_4X_FXAA: sampleCount = 4; fxaaOn = true; break;
-            case AA_MSAA_8X_FXAA: sampleCount = 8; fxaaOn = true; break;
-            case AA_FXAA:                          fxaaOn = true; break;
+            case AA_FXAA:         fxaaOn = true;    break;
             default: break;
             }
 
@@ -849,15 +841,6 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
                 create_framebuffer(renderer->res, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
                                    1, &aaState.fxaaInputFbo);
             }
-            else if (msaaOn && fxaaOn) {
-                load_msaa_pass(renderer->res, sampleCount, &aaState.msaaPass);
-
-                // No depth and no multisampling. We don't need alpha, but presumably
-                // blitting to a framebuffer with exactly the same format is faster, and
-                // blitting seems to be quite the bottleneck.
-                create_framebuffer(renderer->res, GL_SRGB8_ALPHA8,
-                                   -1, 1, &aaState.msaaResolveFbo);
-            }
             else if (msaaOn) {
                 load_msaa_pass(renderer->res, sampleCount, &aaState.msaaPass);
             }
@@ -865,6 +848,8 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
             aaState.technique = cmd->technique;
             aaState.msaaOn    = msaaOn;
             aaState.fxaaOn    = fxaaOn;
+
+            assert(!(msaaOn && fxaaOn) && "Hybrid aa techniques no longer supported");
 
             break;
         }
@@ -888,11 +873,6 @@ renderer_begin_frame_internal(Memory_Arena* workspace, void* commands, u32 count
                 create_framebuffer(newRes, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16,
                                    1, &aaState.fxaaInputFbo);
             }
-            else if (aaState.msaaOn && aaState.fxaaOn) {
-                free_framebuffer(&aaState.msaaResolveFbo);
-                create_framebuffer(newRes, GL_SRGB8_ALPHA8,
-                                   -1, 1, &aaState.msaaResolveFbo);
-            }
             else if (aaState.msaaOn) {
                 u32 sampleCount = aaState.msaaPass.sampleCount;
 
@@ -912,12 +892,7 @@ extern void
 renderer_begin_frame(Memory_Arena* workspace, void* commands, u32 count)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
-    OpenGL_AA_Demo&  aaDemo   = renderer->aaDemo;
     OpenGL_AA_State& aaState  = renderer->aaState;
-
-    // NOTE(blake): the demo is only allowed to call the internal version cuz reasons.
-    assert(!aaDemo.on);
-    renderer->aaDemoThisFrame = false;
 
     if (aaState.technique == AA_NONE) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -941,12 +916,6 @@ extern b32
 renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
 {
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)workspace->start;
-
-    // NOTE(blake): renderer_begin_frame(), renderer_exec(), and renderer_end_frame()
-    // have to be called with the same demo state since this code simply draws wherever
-    // previous calls to glDrawBuffer()/glBindFramebuffer() tell it to.
-    //
-    assert(renderer->aaDemoThisFrame == renderer->aaDemo.on);
 
     renderer->pointLight = nullptr;
 
@@ -1005,13 +974,12 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
             glUniformMatrix4fv(program.modelViewMatrix,  1, GL_FALSE, glm::value_ptr(modelView));
             glUniformMatrix4fv(program.projectionMatrix, 1, GL_FALSE, glm::value_ptr(renderer->projectionMatrix));
 
-            glm::mat3 normalMatrix = mat3(glm::inverseTranspose(modelView));
+            mat3 normalMatrix = mat3(glm::inverseTranspose(modelView));
             glUniformMatrix3fv(program.normalMatrix, 1, GL_FALSE, glm::value_ptr(normalMatrix));
 
             if (renderer->pointLight) {
                 const Render_Point_Light& light = *renderer->pointLight;
 
-                //v3 cSpaceLightPos = v3(renderer->viewMatrix * v4(light.x, light.y, light.z, 1));
                 v3 cSpaceLightPos = v3(renderer->viewMatrix * v4(light.x, light.y, light.z, 1));
                 glUniform1i(program.lit, 1);
                 glUniform3fv(program.lightPos, 1, glm::value_ptr(cSpaceLightPos));
@@ -1031,7 +999,7 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
 
                 if (group.diffuseMap == GL_INVALID_VALUE) {
                     glUniform1i(program.solid, 1);
-                    glUniform3fv(program.color, 1, glm::value_ptr(group.color));
+                    glUniform4fv(program.color, 1, glm::value_ptr(group.color));
                 }
                 else {
                     glUniform1i(program.solid, 0);
@@ -1086,17 +1054,13 @@ renderer_exec(Memory_Arena* workspace, void* commands, u32 count)
     return true;
 }
 
-// NOTE(blake): this function expects all setup and command execution to be done already
-// by renderer_begin_frame() / renderer_exec(). The most this function will do is blit
-// (or render an FXAA pass) to the the default back buffer.
+// NOTE(blake): this is responsible for setting GL_DRAW_FRAMEBUFFER to where
+// the ui pass is supposed to be rendered to. Right now, that just means finishing
+// up anti-aliasing.
 //
 static void
-aa_end_frame(OpenGL_Renderer* renderer)
+prep_for_ui_pass(OpenGL_Renderer* renderer)
 {
-    // The demo sets GL_DRAW_FRAMEBUFFER separately.
-    OpenGL_AA_Demo& aaDemo = renderer->aaDemo;
-    if (aaDemo.on) return;
-
     OpenGL_AA_State& aaState = renderer->aaState;
     assert(aaState.technique != AA_INVALID);
 
@@ -1119,22 +1083,6 @@ aa_end_frame(OpenGL_Renderer* renderer)
         Game_Resolution res = gGame->clientRes;
         render_fxaa_pass_to_color_fbo(renderer->fxaaProgram, aaState.fxaaPass,
                                       res, aaState.fxaaInputFbo.color,
-                                      &useBackBuffer, false);
-    }
-    else if (aaState.msaaOn && aaState.fxaaOn) {
-        Game_Resolution res = renderer->res;
-
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, aaState.msaaPass.framebuffer);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, aaState.msaaResolveFbo.id);
-        glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, res.w, res.h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-
-        // @Hack(blake): same hack as the FXAA-only one.
-        Framebuffer useBackBuffer;
-        useBackBuffer.id = 0;
-
-        glDrawBuffer(GL_BACK);
-        render_fxaa_pass_to_color_fbo(renderer->fxaaProgram, aaState.fxaaPass,
-                                      res, aaState.msaaResolveFbo.color,
                                       &useBackBuffer, false);
     }
     else { // MSAA only
@@ -1160,10 +1108,8 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
     OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
     ImGui_Resources& imgui    = renderer->imgui;
 
-    assert(renderer->aaDemoThisFrame == renderer->aaDemo.on);
-
     // Set GL_DRAW_FRAMEBUFFER to where we need to draw to based on AA state.
-    aa_end_frame(renderer);
+    prep_for_ui_pass(renderer);
 
     // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
     ImGuiIO& io  = ImGui::GetIO();
@@ -1197,10 +1143,6 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
     glVertexAttribPointer(1, 2, GL_FLOAT,         GL_FALSE, sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, uv));
     glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE,  sizeof(ImDrawVert), (void*)offsetof(ImDrawVert, col));
 
-    // TODO: Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled
-    // TODO: Setup viewport using draw_data->DisplaySize
-    // TODO: Setup orthographic projection matrix cover draw_data->DisplayPos to draw_data->DisplayPos + draw_data->DisplaySize
-    // TODO: Setup shader: vertex { float2 pos, float2 uv, u32 color }, fragment shader sample color from 1 texture, multiply by vertex color.
     for (int listI = 0; listI < drawData->CmdListsCount; listI++) {
         const ImDrawList* cmdList      = drawData->CmdLists[listI];
         const ImDrawVert* vertexBuffer = cmdList->VtxBuffer.Data;
@@ -1223,17 +1165,14 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
 
                 v4 clipRect = v4(cmd->ClipRect.x - topLeft.x, cmd->ClipRect.y - topLeft.y, cmd->ClipRect.z - topLeft.x, cmd->ClipRect.w - topLeft.y);
                 if (clipRect.x < fbWidth && clipRect.y < fbHeight && clipRect.z >= 0.0f && clipRect.q >= 0.0f) {
-                    // We are using scissoring to clip some objects. All low-level graphics API should supports it.
-                    // - If your engine doesn't support scissoring yet, you may ignore this at first. You will get some small glitches
-                    //   (some elements visible outside their bounds) but you can fix that once everything else works!
-                    // - Clipping coordinates are provided in imgui coordinates space (from draw_data->DisplayPos to draw_data->DisplayPos + draw_data->DisplaySize)
-                    //   In a single viewport application, draw_data->DisplayPos will always be (0,0) and draw_data->DisplaySize will always be == io.DisplaySize.
-                    //   However, in the interest of supporting multi-viewport applications in the future (see 'viewport' branch on github),
-                    //   always subtract draw_data->DisplayPos from clipping bounds to convert them to your viewport space.
-                    // - Note that pcmd->ClipRect contains Min+Max bounds. Some graphics API may use Min+Max, other may use Min+Size (size being Max-Min)
+                    // NOTE(blake): from IMGUI docs:
+                    // In the interest of supporting multi-viewport applications in the future (see 'viewport' branch on github),
+                    // always subtract draw_data->DisplayPos from clipping bounds to convert them to your viewport space.
+                    // Note that pcmd->ClipRect contains Min+Max bounds. Some graphics API may use Min+Max, other may use Min+Size (size being Max-Min)
                     glScissor((int)cmd->ClipRect.x, (int)(fbHeight - cmd->ClipRect.w),
                               (int)(cmd->ClipRect.z - cmd->ClipRect.x), (int)(cmd->ClipRect.w - cmd->ClipRect.y));
 
+                    // NOTE(blake): from IMGUI docs:
                     // Render 'pcmd->ElemCount/3' indexed triangles.
                     // By default the indices ImDrawIdx are 16-bits, you can change them to 32-bits in imconfig.h if your engine doesn't support 16-bits indices.
                     constexpr GLenum kIndexType = sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
@@ -1255,163 +1194,4 @@ renderer_end_frame(Memory_Arena* ws, struct ImDrawData* drawData)
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glDisable(GL_SCISSOR_TEST);
-}
-
-
-// AA Demo
-
-static inline void
-render_all_techniques(Memory_Arena* ws, Game_Resolution res,
-                      void* execCommands, u32 execCount)
-{
-    OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
-    OpenGL_AA_Demo&  demo     = renderer->aaDemo;
-
-    //{ No AA and plain FXAA
-
-    Framebuffer noAAFb;
-    create_framebuffer(res, GL_SRGB8_ALPHA8, GL_DEPTH_COMPONENT16, 1, &noAAFb);
-
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, noAAFb.id);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    renderer_exec(ws, execCommands, execCount);
-
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-
-    Framebuffer fxaaFb;
-    render_fxaa_pass_to_color_fbo(renderer->fxaaProgram, demo.fxaaPass, res, noAAFb.color, &fxaaFb);
-
-    demo.finalColorFramebuffers[AA_NONE] = noAAFb;
-    demo.finalColorFramebuffers[AA_FXAA] = fxaaFb;
-
-    //}
-
-    // NOTE(blake): In order to keep the final blitting code the same for all techniques and allow
-    // the final color buffer to stretch to fit the windows client area, we need to resolve
-    // the multisampled color buffers into a non-multisampled color buffer here.
-
-    //{ MSAA 2X
-    load_msaa_pass(res, 2, &demo.msaaPass);
-
-    Framebuffer msaa2xColorFb;
-    render_msaa_pass_to_color_fbo(ws, demo.msaaPass, res, execCommands, execCount, &msaa2xColorFb);
-
-    Framebuffer msaa2xfxaaColorFb;
-    render_fxaa_pass_to_color_fbo(renderer->fxaaProgram, demo.fxaaPass, res,
-                                  msaa2xColorFb.color, &msaa2xfxaaColorFb);
-
-    demo.finalColorFramebuffers[AA_MSAA_2X]      = msaa2xColorFb;
-    demo.finalColorFramebuffers[AA_MSAA_2X_FXAA] = msaa2xfxaaColorFb;
-
-    free_msaa_pass(&demo.msaaPass);
-    //}
-
-    //{ MSAA 4X
-    load_msaa_pass(res, 4, &demo.msaaPass);
-
-    Framebuffer msaa4xColorFb;
-    render_msaa_pass_to_color_fbo(ws, demo.msaaPass, res, execCommands, execCount, &msaa4xColorFb);
-
-    Framebuffer msaa4xfxaaColorFb;
-    render_fxaa_pass_to_color_fbo(renderer->fxaaProgram, demo.fxaaPass, res,
-                                  msaa4xColorFb.color, &msaa4xfxaaColorFb);
-
-    demo.finalColorFramebuffers[AA_MSAA_4X]      = msaa4xColorFb;
-    demo.finalColorFramebuffers[AA_MSAA_4X_FXAA] = msaa4xfxaaColorFb;
-
-    free_msaa_pass(&demo.msaaPass);
-    //}
-
-    //{ MSAA 8X
-    load_msaa_pass(res, 8, &demo.msaaPass);
-
-    Framebuffer msaa8xColorFb;
-    render_msaa_pass_to_color_fbo(ws, demo.msaaPass, res, execCommands, execCount, &msaa8xColorFb);
-
-    Framebuffer msaa8xfxaaColorFb;
-    render_fxaa_pass_to_color_fbo(renderer->fxaaProgram, demo.fxaaPass, res, msaa8xColorFb.color, &msaa8xfxaaColorFb);
-
-    demo.finalColorFramebuffers[AA_MSAA_8X]      = msaa8xColorFb;
-    demo.finalColorFramebuffers[AA_MSAA_8X_FXAA] = msaa8xfxaaColorFb;
-
-    free_msaa_pass(&demo.msaaPass);
-    //}
-
-    //{ MSAA 16X
-    load_msaa_pass(res, 16, &demo.msaaPass);
-
-    Framebuffer msaa16xColorFb;
-    render_msaa_pass_to_color_fbo(ws, demo.msaaPass, res, execCommands, execCount, &msaa16xColorFb);
-
-    demo.finalColorFramebuffers[AA_MSAA_16X] = msaa16xColorFb;
-
-    free_msaa_pass(&demo.msaaPass);
-    //}
-
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-}
-
-// NOTE(blake): the default win32 framebuffer has a color buffer and a depth buffer.
-// This is wasteful for everything but no AA passes, but it's not that big of a deal.
-
-extern void
-renderer_demo_aa(Memory_Arena* ws, Game_Resolution res, AA_Technique technique,
-                 void* beginCommands, u32 beginCount,
-                 void* execCommands,  u32 execCount,
-                 struct ImDrawData* endFrameDrawData)
-{
-    OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
-    OpenGL_AA_Demo&  demo     = renderer->aaDemo;
-
-    renderer->aaDemoThisFrame = true;
-
-    // Handle commands like `set viewport`, but don't clear any framebuffer attachments.
-    //renderer_begin_frame(ws, beginCommands, beginCount);
-    renderer_begin_frame_internal(ws, beginCommands, beginCount,
-                                  GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    if (!demo.on) {
-        demo.on = true; // needs to be set before renderer_exec() gets called.
-
-        log_debug("Rendering Techniques at %u %u\n", res.w, res.h);
-        init_fxaa_pass(renderer->fxaaProgram, res, &demo.fxaaPass);
-        render_all_techniques(ws, res, execCommands, execCount);
-    }
-
-    // Blit the final color buffer to the default back buffer.
-
-    GLuint finalFramebuffer = demo.finalColorFramebuffers[technique].id;
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, finalFramebuffer);
-    glDrawBuffer(GL_BACK);
-
-    glBlitFramebuffer(0, 0, res.w, res.h, 0, 0, gGame->clientRes.w, gGame->clientRes.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-
-    // Avoid having to clear the depth buffer to draw the UI. Currently, this is redundant.
-    glDisable(GL_DEPTH_TEST);
-    renderer_end_frame(ws, endFrameDrawData);
-    glEnable(GL_DEPTH_TEST);
-}
-
-extern void
-renderer_stop_aa_demo(Memory_Arena* ws)
-{
-    OpenGL_Renderer* renderer = (OpenGL_Renderer*)ws->start;
-    OpenGL_AA_Demo&  demo     = renderer->aaDemo;
-
-    free_fxaa_pass(&demo.fxaaPass);
-
-    for (Framebuffer& f : demo.finalColorFramebuffers) {
-        glDeleteTextures(1, &f.color);
-        glDeleteRenderbuffers(1, &f.depth);
-        glDeleteFramebuffers(1, &f.id);
-
-        f.color       = GL_INVALID_VALUE;
-        f.depth       = GL_INVALID_VALUE;
-        f.id          = GL_INVALID_VALUE;
-        f.sampleCount = 0;
-    }
-
-    demo.on = false;
 }

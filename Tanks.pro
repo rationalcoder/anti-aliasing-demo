@@ -41,6 +41,7 @@ HEADERS += tanks.h \
     imgui.cpp \
     imgui_impl_win32.h \
     imgui_impl_win32.cpp \
+    spk_file.h
 
 SOURCES += win32_tanks.cpp \
 

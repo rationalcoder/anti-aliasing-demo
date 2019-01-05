@@ -247,3 +247,4 @@ arena_allocate(void* arena, umm size, u32 alignment)
 
 // Simple, tiny list stuff for API boundaries
 #define list_push(list, p) (((p)->next = (list)), p)
+

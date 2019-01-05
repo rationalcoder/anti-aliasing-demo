@@ -4,6 +4,7 @@
 enum Game_Key
 {
     GK_ESCAPE,
+    GK_RETURN,
     GK_W,
     GK_A,
     GK_S,
@@ -19,6 +20,18 @@ enum Game_Key
     GK_7,
     GK_8,
     GK_9,
+    GK_F1,
+    GK_F2,
+    GK_F3,
+    GK_F4,
+    GK_F5,
+    GK_F6,
+    GK_F7,
+    GK_F8,
+    GK_F9,
+    GK_F10,
+    GK_F11,
+    GK_F12,
     GK_NUM_
 };
 

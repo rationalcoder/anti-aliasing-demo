@@ -75,18 +75,24 @@ fmt(const char* fmt, ...)
     return buffer32((u8*)buffer, (u32)written);
 }
 
-inline buffer32
-str(const char* s)
+inline string32
+to_str(const char* s)
 {
-    u32 size = down_cast<u32>(strlen(s));
-    u8* data = (u8*)temp_bytes(size);
+    u32 size   = down_cast<u32>(strlen(s));
+    char* data = temp_bytes(size);
     memcpy(data, s, size);
 
-    return buffer32(data, size);
+    return string32(data, size);
+}
+
+inline string32
+to_str(buffer32 b)
+{
+    return (string32)b;
 }
 
 inline char*
-cstr(buffer32 b)
+to_cstr(string32 b)
 {
     char* bytes = temp_bytes(b.size + 1);
     memcpy(bytes, b.data, b.size);
@@ -95,13 +101,13 @@ cstr(buffer32 b)
     return bytes;
 }
 
-inline buffer32
-cat(buffer32 a, buffer32 b)
+inline string32
+cat(string32 a, string32 b)
 {
-    buffer32 result(uninitialized);
+    string32 result(uninitialized);
 
     u32 size = a.size + b.size;
-    result.data = (u8*)temp_bytes(size);
+    result.data = temp_bytes(size);
     result.size = size;
 
     memcpy(result.data, a.data, a.size);
@@ -110,14 +116,14 @@ cat(buffer32 a, buffer32 b)
     return result;
 }
 
-inline buffer32
-cat(const char* a, buffer32 b)
+inline string32
+cat(const char* a, string32 b)
 {
-    buffer32 result(uninitialized);
+    string32 result(uninitialized);
 
     u32 aSize = (u32)strlen(a);
     u32 size  = aSize + b.size;
-    result.data = (u8*)temp_bytes(size);
+    result.data = temp_bytes(size);
     result.size = size;
 
     memcpy(result.data, a, aSize);
@@ -128,22 +134,30 @@ cat(const char* a, buffer32 b)
 
 // @Slow
 
-inline buffer32
-cat(buffer32 a, const char* b) { return cat(a, str(b)); }
+inline string32
+cat(string32 a, const char* b) { return cat(a, to_str(b)); }
 
-inline buffer32
-cat(const char* a, const char* b) { return cat(str(a), str(b)); }
+inline string32
+cat(const char* a, const char* b) { return cat(to_str(a), to_str(b)); }
 
 
-inline buffer32
-dup(buffer32 b)
+inline string32
+dup(string32 b)
 {
-    buffer32 result(uninitialized);
-    result.data = (u8*)allocate_bytes(b.size);
-    result.size = b.size;
+    char* data = allocate_bytes(b.size);
+    memcpy(data, b.data, b.size);
 
-    memcpy(result.data, b.data, b.size);
-    return result;
+    return string32(data, b.size);
+}
+
+inline string32
+dup(const char* s)
+{
+    u32   size = (u32)strlen(s);
+    char* data = allocate_bytes(size);
+    memcpy(data, s, size);
+
+    return string32(data, size);
 }
 
 inline char*
@@ -177,7 +191,7 @@ read_file_buffer(const char* file)
 }
 
 inline buffer32
-read_file_buffer(buffer32 file) { return read_file_buffer(cstr(file)); }
+read_file_buffer(string32 file) { return read_file_buffer(to_cstr(file)); }
 
 inline buffer32
 next_line(buffer32 buffer)
@@ -296,34 +310,34 @@ eat_spaces_and_tabs(buffer32 buffer)
     return result;
 }
 
-inline buffer32
+inline string32
 first_word(buffer32 buffer)
 {
     buffer = eat_spaces_and_tabs(buffer);
     for (u32 i = 0; i < buffer.size; i++) {
-        u8 c = buffer.data[i];
+        char c = buffer.data[i];
         if (c == ' ' || c == '\n' || c == '\t') {
             buffer.size = i;
-            return buffer;
+            return (string32)buffer;
         }
     }
 
-    return buffer;
+    return (string32)buffer;
 }
 
-inline buffer32
-next_word(buffer32 word, buffer32 buffer)
+inline string32
+next_word(string32 word, buffer32 buffer)
 {
-    buffer32 result = {};
+    string32 result;
     if (buffer.size < word.size + 1)
         return result;
 
     result.data = word.data + word.size;
     result.size = buffer.size;
-    result = eat_spaces_and_tabs(result);
+    result = (string32)eat_spaces_and_tabs(result);
 
     for (u32 i = 1; i < result.size; i++) {
-        u8 c = result.data[i];
+        char c = result.data[i];
         if (c == ' ' || c == '\n' || c == '\t') {
             result.size = i;
             return result;

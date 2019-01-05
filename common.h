@@ -35,6 +35,8 @@ static_assert(sizeof(CONCAT(_anon_array, counter)) % sizeof(type) == 0,\
 #define FIELD_ARRAY(type, name, structDefinition)\
 FIELD_ARRAY_IMPL(type, name, structDefinition, __COUNTER__)
 
+// TODO: replace with Jon Blow's defer thing that allows you to use the
+// ideal brace syntax. https://www.twitch.tv/videos/354153241 @ 38:18
 template <typename Func_>
 struct Defer_Impl
 {
@@ -49,7 +51,7 @@ Defer_Impl<Func_> defer_func(Func_ f) { return Defer_Impl<Func_>(f); }
 #define DEFER_1(x, y) x##y
 #define DEFER_2(x, y) DEFER_1(x, y)
 #define DEFER_3(x) DEFER_2(x, __COUNTER__)
-#define defer(code) auto DEFER_3(_defer_) = defer_func([&](){code;})
+#define defer(code) auto DEFER_3(_defer_) = defer_func([&](){code})
 
 struct Game_Resolution
 {

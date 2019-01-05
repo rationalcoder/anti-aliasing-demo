@@ -22,8 +22,13 @@ uniform sampler2D u_specular;
 
 void main()
 {
+    if (u_solid) {
+        gl_FragColor = vec4(u_color.rgb, 1);
+        return;
+    }
+
     if (u_lit) {
-        vec4 diffuse = texture(u_diffuse, v_uv);
+        vec4 diffuse = u_solid ? u_color : texture(u_diffuse, v_uv);
         vec3 ambient = .01 * diffuse.rgb;
         //vec3 ambient = vec3(.01, .01, .01);
 

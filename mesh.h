@@ -55,8 +55,8 @@ struct Colored_Index_Group
     u32 start;
     u32 count;
 
-    b32 has_diffuse_map()  const { return !!diffuseMap.data; }
-    b32 has_normal_map()   const { return !!normalMap.data; }
+    b32 has_diffuse_map()  const { return !!diffuseMap.data;  }
+    b32 has_normal_map()   const { return !!normalMap.data;   }
     b32 has_specular_map() const { return !!specularMap.data; }
     b32 has_emissive_map() const { return !!emissiveMap.data; }
 };
@@ -69,6 +69,8 @@ struct Material
 
 struct Static_Mesh
 {
+    string32 tag;
+
     f32*  vertices = nullptr;
     f32*  normals  = nullptr;
     f32*  tangents = nullptr;

@@ -113,7 +113,7 @@ find_index(Index_Map& map, v3 vx, v2 vt, v3 vn, v3 vtg)
 
 
 extern OBJ_File
-parse_obj_file(buffer32 buffer, u32 processFlags)
+obj_load(buffer32 buffer, u32 processFlags)
 {
     temp_scope();
 
@@ -129,7 +129,7 @@ parse_obj_file(buffer32 buffer, u32 processFlags)
 
     // NOTE(blake): first pass to get array bounds since I don't have a bucket array atm.
     for (buffer32 line = buffer; line; line = next_line(line)) {
-        buffer32 type = first_word(line);
+        string32 type = first_word(line);
 
         if      (type == 'v')  vertexCount++;
         else if (type == "vt") uvCount++;
@@ -167,7 +167,7 @@ parse_obj_file(buffer32 buffer, u32 processFlags)
     u32             groupCount = 0;
 
     for (buffer32 line = buffer; line; line = next_line(line)) {
-        buffer32 type = first_word(line);
+        string32 type = first_word(line);
 
         if (type == 'v') {
             v3 value;
@@ -471,7 +471,7 @@ parse_obj_file(buffer32 buffer, u32 processFlags)
 }
 
 extern MTL_File
-parse_mtl_file(buffer32 buffer)
+mtl_load(buffer32 buffer)
 {
     temp_scope();
 
@@ -484,7 +484,7 @@ parse_mtl_file(buffer32 buffer)
     b32 inMaterial    = false;
 
     for (buffer32 line = buffer; line; line = next_line(line)) {
-        buffer32 type = first_word(line);
+        string32 type = first_word(line);
 
         if (!inMaterial) {
             if (type != "newmtl") continue;

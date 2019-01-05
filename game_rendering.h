@@ -10,6 +10,44 @@
 
 // Utility
 
+//: Color
+
+inline f32
+srgb_to_linear(f32 val)
+{
+    return val*val;
+}
+
+inline v3
+srgb_to_linear(v3 c)
+{
+    c.r = srgb_to_linear(c.r);
+    c.g = srgb_to_linear(c.g);
+    c.b = srgb_to_linear(c.b);
+
+    return c;
+}
+
+inline v4
+srgb_to_linear(v4 c)
+{
+    return v4(srgb_to_linear(v3(c.r, c.g, c.b)), c.a);
+}
+
+inline v3
+srgb_to_linear(f32 r, f32 g, f32 b)
+{
+    return srgb_to_linear(v3(r, g, b));
+}
+
+inline v4
+srgb_to_linear(f32 r, f32 g, f32 b, f32 a)
+{
+    return srgb_to_linear(v4(r, g, b, a));
+}
+
+//: Geometry
+
 inline void
 points_by_step(u32 n, v3 from, v3 step, v3** out)
 {
@@ -90,6 +128,48 @@ make_xy_grid(int xMax, int yMax)
     return result;
 }
 
+struct AABB
+{
+    v3 min;
+    v3 max;
+};
+
+inline AABB
+compute_bounding_box(const Static_Mesh& mesh)
+{
+    AABB result;
+
+    f32 minX = -FLT_MAX;
+    f32 minY = -FLT_MAX;
+    f32 minZ = -FLT_MAX;
+
+    f32 maxX = 0;
+    f32 maxY = 0;
+    f32 maxZ = 0;
+
+    for (u32 i = 0; i < mesh.vertexCount; i++) {
+        v3 v = ((v3*)mesh.vertices)[i];
+        if (v.x > maxX) maxX = v.x;
+        else if (v.x < minX) minX = v.x;
+
+        if (v.y > maxY) maxY = v.y;
+        else if (v.y < minY) minY = v.y;
+
+        if (v.z > maxZ) maxZ = v.z;
+        else if (v.z < minZ) minZ = v.z;
+    }
+
+    result.min.x = minX;
+    result.min.y = minY;
+    result.min.z = minZ;
+
+    result.max.x = maxX;
+    result.max.y = maxY;
+    result.max.z = maxZ;
+
+    return result;
+}
+
 struct Debug_Cube
 {
     f32* vertices; // 3D
@@ -97,7 +177,7 @@ struct Debug_Cube
 };
 
 inline Static_Mesh
-push_debug_cube(f32 halfWidth)
+make_cube(f32 halfWidth)
 {
     f32 vertices[] = {
         -halfWidth, -halfWidth,  halfWidth, // ftl 0
@@ -142,7 +222,7 @@ push_debug_cube(f32 halfWidth)
     mesh.vertices = allocate_array_copy(ArraySize(vertices), f32, vertices);
     mesh.indices  = allocate_array_copy(ArraySize(indices),  u8,  indices);
 
-    mesh.vertexCount = ArraySize(vertices);
+    mesh.vertexCount = ArraySize(vertices) / 3;
     mesh.indexCount  = ArraySize(indices);
 
     mesh.indexSize = IndexSize_u8;
@@ -151,8 +231,43 @@ push_debug_cube(f32 halfWidth)
     return mesh;
 }
 
+inline Static_Mesh
+make_solid_cube(f32 halfWidth, v3 color)
+{
+    Static_Mesh cube = make_cube(halfWidth);
+
+    auto material = allocate_type(Material);
+
+    auto group = allocate_new(Colored_Index_Group);
+    material->coloredIndexGroups = group;
+    material->coloredGroupCount  = 1;
+
+    group->color = color;
+    group->start = 0;
+    group->count = cube.indexCount;
+
+    cube.material = material;
+
+    return cube;
+}
+
+inline Static_Mesh
+make_box(v3 origin, v3 span, v3 color)
+{
+    // Scale and translate a 1x1x1 cube to fit.
+    Static_Mesh cube = make_solid_cube(.5f, color);
+    for (u32 i = 0; i < cube.vertexCount; i++) {
+        v3& v = *(((v3*)cube.vertices) + i);
+        v *= span;
+        v += origin;
+    }
+
+    return cube;
+}
+
+
 static inline MTL_Material*
-find_material(const MTL_File& mtl, buffer32 name)
+find_material(const MTL_File& mtl, string32 name)
 {
     for (u32 i = 0; i < mtl.materialCount; i++) {
         if (mtl.materials[i].name == name)
@@ -163,7 +278,7 @@ find_material(const MTL_File& mtl, buffer32 name)
 }
 
 static inline Texture
-load_texture(buffer32 path)
+load_texture(string32 path)
 {
     arena_scope(gMem->file);
 
@@ -187,9 +302,12 @@ load_texture(buffer32 path)
 }
 
 inline Static_Mesh
-load_static_mesh(const OBJ_File& obj, const MTL_File& mtl, const char* texturePath)
+load_static_mesh(const OBJ_File& obj, const MTL_File& mtl,
+                 const char* texturePath, const char* tag)
 {
     Static_Mesh result;
+
+    result.tag = dup(tag);
 
     result.vertices = (f32*)obj.vertices;
     result.normals  = (f32*)obj.normals;
@@ -378,9 +496,9 @@ inline void
 cmd_set_clear_color(f32 r, f32 g, f32 b, f32 a)
 {
     Set_Clear_Color* clearColor = push_render_command(Set_Clear_Color);
-    clearColor->r = r;
-    clearColor->g = g;
-    clearColor->b = b;
+    clearColor->r = srgb_to_linear(r);
+    clearColor->g = srgb_to_linear(g);
+    clearColor->b = srgb_to_linear(b);
     clearColor->a = a;
 }
 
@@ -448,9 +566,9 @@ cmd_render_debug_lines(v3* vertices, u32 vertexCount, v3 color)
     debugLines->vertices    = (f32*)vertices;
     debugLines->vertexCount = vertexCount;
 
-    debugLines->r = color.r;
-    debugLines->g = color.g;
-    debugLines->b = color.b;
+    debugLines->r = srgb_to_linear(color.r);
+    debugLines->g = srgb_to_linear(color.g);
+    debugLines->b = srgb_to_linear(color.b);
 }
 
 inline void
@@ -463,9 +581,9 @@ cmd_render_debug_cubes(view32<v3> centers, f32 halfWidth, v3 color)
     debugCubes->count     = centers.size;
     debugCubes->halfWidth = halfWidth;
 
-    debugCubes->r = color.r;
-    debugCubes->g = color.g;
-    debugCubes->b = color.b;
+    debugCubes->r = srgb_to_linear(color.r);
+    debugCubes->g = srgb_to_linear(color.g);
+    debugCubes->b = srgb_to_linear(color.b);
 }
 
 inline void
@@ -490,9 +608,9 @@ cmd_render_point_light(v3 position, v3 color)
     pointLight->x = position.x;
     pointLight->y = position.y;
     pointLight->z = position.z;
-    pointLight->r = color.r;
-    pointLight->g = color.g;
-    pointLight->b = color.b;
+    pointLight->r = srgb_to_linear(color.r);
+    pointLight->g = srgb_to_linear(color.g);
+    pointLight->b = srgb_to_linear(color.b);
 }
 
 inline void
