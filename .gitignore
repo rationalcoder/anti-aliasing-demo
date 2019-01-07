@@ -6,6 +6,7 @@ out
 *.swo*
 *.cap
 *imgui.ini*
+*pro.user.*
 .qmake*
 run_tree/demo/results/*
 build/

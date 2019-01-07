@@ -1,14 +1,13 @@
 #include "tanks.h"
 
 #include "stb.h"
-#include "imgui.h"
-
-#include "game_rendering.h"
 #include "obj_file.h"
+#include "game_rendering.h"
 
 #include "platform.cpp"
 #include "opengl_renderer.cpp"
 #include "obj_file.cpp"
+#include "developer_ui.cpp"
 
 // @CRT @Dependency
 #include <math.h>
@@ -372,18 +371,53 @@ update_aa_demo(AA_Demo& demo)
 }
 #endif
 
+static void
+show_debug_menu()
+{
+    // FPS thing the the top right corner.
+    int corner = 1;
+    ImVec2 overlayPos = ImVec2((corner & 1) ? ImGui::GetIO().DisplaySize.x - 10 : 10,
+            (corner & 2) ? ImGui::GetIO().DisplaySize.y - 10 : 25);
+    ImVec2 overlayPosPivot = ImVec2((corner & 1) ? 1.0f : 0.0f, (corner & 2) ? 1.0f : 0.0f);
+    ImGui::SetNextWindowPos(overlayPos, ImGuiCond_Always, overlayPosPivot);
+    ImGui::SetNextWindowBgAlpha(0.3f);
+    if (ImGui::Begin("", 0, (corner != -1 ? ImGuiWindowFlags_NoMove : 0) |
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+                ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
+        const char* frameTime = fmt_cstr("Frame Time: %f ms (%f FPS)",
+                gGame->frameStats.frameTimeWindow.average / 1000.0f,
+                gGame->frameStats.fps());
+        ImGui::Text(frameTime);
+        ImGui::End();
+    }
+}
+
+// once per frame, before stepping
 extern void
 game_tick(f32 dt)
 {
+    (void)dt;
+
+    f32 smoothedDt = 1/gGame->frameStats.fps();
+
     Game_Keyboard& kb = gGame->input.keyboard;
     if (kb.released(GK_ESCAPE) || kb.released(GK_F4, GKM_ALT)) {
         gGame->shouldQuit = true;
         return;
     }
 
-    if (kb.released(GK_RETURN, GKM_ALT))
+    if (kb.released(GK_RETURN, GKM_ALT)) {
+        log_debug("going fullscreen\n");
         platform_toggle_fullscreen();
+        log_debug("done\n");
+    }
 
+    if (kb.released(GK_F5))
+        gGame->showDeveloperUi = !gGame->showDeveloperUi;
+
+    if (gGame->showDeveloperUi)
+        show_developer_ui(gGame->devUi);
 
     constexpr f32 cameraV = 2; // m/s
 
@@ -399,14 +433,14 @@ game_tick(f32 dt)
     if (kb.down(GK_D)) right   += cameraV;
     if (kb.down(GK_E)) up      += cameraV;
 
-    v3 movement(up, right, forward);
+    v3 movement {up, right, forward};
 
     if (movement.x || movement.y || movement.z) {
         movement = glm::normalize(v3(up, right, forward)) * cameraV;
 
-        camera.up_by(dt * movement.x);
-        camera.right_by(dt * movement.y);
-        camera.forward_by(dt * movement.z);
+        camera.up_by(smoothedDt * movement.x);
+        camera.right_by(smoothedDt * movement.y);
+        camera.forward_by(smoothedDt * movement.z);
     }
 
     // NOTE(blake): not sure if stepping makes sense for mouse drag movement,

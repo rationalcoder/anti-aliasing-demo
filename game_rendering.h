@@ -490,6 +490,8 @@ push_render_command_(Render_Command_Type type, u32 size, u32 alignment)
     return cmd;
 }
 
+// NOTE(blake): all colors passed are expected to be sRGB.
+
 // Frame begin commands:
 
 inline void

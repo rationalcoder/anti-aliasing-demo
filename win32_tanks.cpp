@@ -347,7 +347,27 @@ win32_new_frame(Win32_State* state)
         memcpy(io.KeysDown,        keyboard.keys,      sizeof(keyboard.keys));
     }
 
-    // ImGui_ImplWin32_NewFrame();
+    if (io.WantCaptureMouse) {
+        ImGuiMouseCursor imguiCursor = ImGui::GetMouseCursor();
+
+        // Show OS mouse cursor
+        LPTSTR win32Cursor = IDC_ARROW;
+        switch (imguiCursor)
+        {
+        case ImGuiMouseCursor_None:         win32Cursor = NULL;         break;
+        case ImGuiMouseCursor_Arrow:        win32Cursor = IDC_ARROW;    break;
+        case ImGuiMouseCursor_TextInput:    win32Cursor = IDC_IBEAM;    break;
+        case ImGuiMouseCursor_ResizeAll:    win32Cursor = IDC_SIZEALL;  break;
+        case ImGuiMouseCursor_ResizeEW:     win32Cursor = IDC_SIZEWE;   break;
+        case ImGuiMouseCursor_ResizeNS:     win32Cursor = IDC_SIZENS;   break;
+        case ImGuiMouseCursor_ResizeNESW:   win32Cursor = IDC_SIZENESW; break;
+        case ImGuiMouseCursor_ResizeNWSE:   win32Cursor = IDC_SIZENWSE; break;
+        case ImGuiMouseCursor_Hand:         win32Cursor = IDC_HAND;     break;
+        }
+
+        SetCursor(LoadCursorA(NULL, win32Cursor));
+    }
+
     ImGui::NewFrame();
 
     Game_Mouse&    gameMouse    = state->game->input.mouse;
@@ -388,26 +408,6 @@ win32_new_frame(Win32_State* state)
 
         if (state->dragging)
             win32_center_cursor();
-    }
-    else {
-        ImGuiMouseCursor imguiCursor = ImGui::GetMouseCursor();
-
-        // Show OS mouse cursor
-        LPTSTR win32Cursor = IDC_ARROW;
-        switch (imguiCursor)
-        {
-        case ImGuiMouseCursor_None:         win32Cursor = NULL;         break;
-        case ImGuiMouseCursor_Arrow:        win32Cursor = IDC_ARROW;    break;
-        case ImGuiMouseCursor_TextInput:    win32Cursor = IDC_IBEAM;    break;
-        case ImGuiMouseCursor_ResizeAll:    win32Cursor = IDC_SIZEALL;  break;
-        case ImGuiMouseCursor_ResizeEW:     win32Cursor = IDC_SIZEWE;   break;
-        case ImGuiMouseCursor_ResizeNS:     win32Cursor = IDC_SIZENS;   break;
-        case ImGuiMouseCursor_ResizeNESW:   win32Cursor = IDC_SIZENESW; break;
-        case ImGuiMouseCursor_ResizeNWSE:   win32Cursor = IDC_SIZENWSE; break;
-        case ImGuiMouseCursor_Hand:         win32Cursor = IDC_HAND;     break;
-        }
-
-        SetCursor(LoadCursorA(NULL, win32Cursor));
     }
 
     bit32& keys = gameKeyboard.cur.keys;
@@ -464,7 +464,6 @@ win32_imgui_init(Win32_State* state)
     ImGui::CreateContext();
     ImGui_ImplWin32_Init(state->hwnd);
     ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = nullptr;
     io.ConfigResizeWindowsFromEdges = true;
 
     ImGui::StyleColorsDark(0);
@@ -510,6 +509,9 @@ win32_game_loop(Win32_State* state)
         if (!firstFrame) { gGame->frameStats.frameTimeWindow.add(elapsed.QuadPart); }
         else             { firstFrame = false; }
 
+        // TODO(blake): move the stepping logic to the game. The game code decides
+        // whether it wants to step anyway, and there isn't anything platform
+        // specific about it.
         constexpr f32 stepDt = us_per_step()/1000000.0f;
 
         // Consume lag for updating in fixed steps.
@@ -526,6 +528,7 @@ win32_game_loop(Win32_State* state)
         soundElapsed.QuadPart *= 1000000;
         soundElapsed.QuadPart /= state->frequency.QuadPart;
 
+        // TODO(blake): audio thread/threading in general.
         soundPrev = soundCurrent;
         game_play_sound(soundElapsed.QuadPart);
 
@@ -998,7 +1001,7 @@ win32_init(Win32_State* state, Platform* platformOut, Game_Memory* memoryOut,
     state->coreCount = sysInfo.dwNumberOfProcessors;
     state->frequency = frequency;
 
-    //win32_setup_console(state);
+    win32_setup_console(state);
     win32_register_window_classes(instance);
     win32_create_opengl_window(state, instance, windowRes.w, windowRes.h);
     win32_grab_opengl_functions(state);

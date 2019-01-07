@@ -13,7 +13,7 @@ struct Memory_Arena
 
     void* start;
     void* at;
-    void* next; 
+    void* next;
 
     umm size;
     umm max;
@@ -56,19 +56,6 @@ align_down(void* address, s32 alignPow2)
     return result;
 }
 
-template <typename T_> inline T_*
-next_header(T_* headerAddress, u32 offset)
-{
-    T_* result = (T_*)aligned_offset(headerAddress + 1, offset, alignof(T_));
-    return result;
-}
-
-template <typename T_> inline void*
-payload_after(T_* headerAddress)
-{
-    return headerAddress + 1;
-}
-
 inline void*
 aligned_offset(void* address, u32 offset, s32 alignPow2)
 {
@@ -81,7 +68,7 @@ arena_size(Memory_Arena& arena)
 {
     umm result = ((u8*)arena.at - (u8*)arena.start);
     return result;
-} 
+}
 
 inline umm
 arena_size(Memory_Arena& arena, umm elemSize)
@@ -89,7 +76,7 @@ arena_size(Memory_Arena& arena, umm elemSize)
     //umm result = ((u8*)arena.at - (u8*)arena.start) / elemSize;
     umm result = arena_size(arena) / elemSize;
     return result;
-} 
+}
 
 inline void
 reset(Memory_Arena& arena)
@@ -179,7 +166,7 @@ sub_allocate_(Memory_Arena& arena, umm size, u32 alignment, const char* tag,
     result.next   = (u8*)start + size;
     result.size   = size;
     result.max    = ~(umm)0; // max doesn't really make sense but inf is the most reasonable value.
-    
+
     return result;
 }
 
@@ -213,8 +200,9 @@ struct Memory_Arena_Scope
     ~Memory_Arena_Scope() { reset(*arena, oldAt); }
 };
 
-#define arena_scope_impl(arena, counter) Memory_Arena_Scope _arenaScope##counter{&arena}
-#define arena_scope(arena) arena_scope_impl(arena, __COUNTER__);
+#define arena_scope_impl2(arena, counter) Memory_Arena_Scope _arenaScope##counter{&arena}
+#define arena_scope_impl1(arena, counter) arena_scope_impl2(arena, counter)
+#define arena_scope(arena) arena_scope_impl1(arena, __COUNTER__);
 
 struct Push_Buffer_Scope
 {
@@ -225,8 +213,9 @@ struct Push_Buffer_Scope
     ~Push_Buffer_Scope() { reset(buffer->arena, oldAt); buffer->count = 0; }
 };
 
-#define push_buffer_scope_impl(buffer, counter) Push_Buffer_Scope _pushBufferScope##counter{&buffer}
-#define push_buffer_scope(buffer) push_buffer_scope_impl(buffer, __COUNTER__);
+#define push_buffer_scope_impl2(buffer, counter) Push_Buffer_Scope _pushBufferScope##counter{&buffer}
+#define push_buffer_scope_impl1(buffer, counter) push_buffer_scope_impl2(buffer, __COUNTER__);
+#define push_buffer_scope(buffer) push_buffer_scope_impl1(buffer, __COUNTER__);
 
 using Allocate_Func = void* (void* data, umm size, u32 alignment);
 
@@ -243,8 +232,35 @@ inline void*
 arena_allocate(void* arena, umm size, u32 alignment)
 { return push(*(Memory_Arena*)(arena), size, alignment); }
 
-// Extended Types
 
 // Simple, tiny list stuff for API boundaries
 #define list_push(list, p) (((p)->next = (list)), p)
+
+
+// Header stuff for things like render commands
+
+template <typename T_> inline T_*
+next_header(T_* headerAddress, u32 offset)
+{
+    T_* result = (T_*)aligned_offset(headerAddress + 1, offset, alignof(T_));
+    return result;
+}
+
+#define for_each_header_impl2(type, headerVar, pushBuffer, counter)\
+u32 _i##counter = 0;\
+for (Render_Command_Header* headerVar = (Render_Command_Header*)pushBuffer.arena.start;\
+     _i##counter < pushBuffer.count; _i##counter++, headerVar = next_header(headerVar, headerVar->size))
+
+#define for_each_header_impl1(type, headerVar, pushBuffer, counter)\
+for_each_header_impl2(type, headerVar, pushBuffer, counter)
+
+#define for_each_header(type, headerVar, pushBuffer)\
+for_each_header_impl1(type, headerVar, pushBuffer, __COUNTER__)
+
+
+template <typename T_> inline void*
+payload_after(T_* headerAddress)
+{
+    return headerAddress + 1;
+}
 

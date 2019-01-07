@@ -9,6 +9,8 @@
 #include "input.h"
 #include "camera.h"
 #include "renderer.h"
+#include "imgui.h"
+
 
 constexpr u32 us_per_step() { return 8333; }
 constexpr b32 should_step() { return false; }
@@ -53,6 +55,10 @@ to_cstr(AA_Technique t)
     return "Unknown";
 }
 
+struct Developer_UI
+{
+};
+
 struct Game
 {
     // Filled in during game_init()
@@ -75,7 +81,9 @@ struct Game
     Push_Buffer  frameBeginCommands;
     Push_Buffer  residentCommands;
 
-    b32 showEditor = true;
+    Developer_UI devUi;
+
+    bool showDeveloperUi = false;
     b32 shouldQuit = false;
 };
 
