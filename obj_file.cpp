@@ -1,10 +1,3 @@
-#include "obj_file.h"
-
-#include <stdio.h>
-
-#include "tanks.h"
-#include "buffer.h"
-#include "containers.h"
 
 struct Material_Group
 {
@@ -56,7 +49,7 @@ struct Index_Map
     u32 bucketCount;
 };
 
-static inline Index_Map
+static Index_Map
 make_index_map(u32 vertexCount)
 {
     Index_Map result;
@@ -66,14 +59,14 @@ make_index_map(u32 vertexCount)
     return result;
 }
 
-static inline void
+static void
 hash_combine(umm& seed, umm hash)
 {
     hash += 0x9e3779b9 + (seed << 6) + (seed >> 2);
     seed ^= hash;
 }
 
-template <umm Size_> static inline umm
+template <umm Size_> static umm
 hash_obj_vertex(char (&buffer)[Size_])
 {
     umm seed = 0;
@@ -83,7 +76,7 @@ hash_obj_vertex(char (&buffer)[Size_])
     return seed;
 }
 
-inline OBJ_Index_Bucket*
+OBJ_Index_Bucket*
 find_index(Index_Map& map, v3 vx, v2 vt, v3 vn, v3 vtg)
 {
     char hashInput[sizeof(vx) + sizeof(vt) + sizeof(vn) + sizeof(vtg)];

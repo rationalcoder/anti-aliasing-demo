@@ -1,4 +1,3 @@
-#include "tanks.h"
 
 static inline void*
 stbi_realloc_sized(void* p, umm oldSize, umm newSize);
@@ -32,3 +31,4 @@ stbi_realloc_sized(void* p, umm oldSize, umm newSize)
 #include "stb_image.h"
 #include "stb_truetype.h"
 #include "stb_sprintf.h"
+

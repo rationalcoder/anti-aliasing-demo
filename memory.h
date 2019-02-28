@@ -1,8 +1,3 @@
-#pragma once
-#include <memory>
-
-#include "platform.h"
-#include "primitives.h"
 
 struct Memory_Arena
 {
@@ -161,6 +156,7 @@ sub_allocate_(Memory_Arena& arena, umm size, u32 alignment, const char* tag,
     Memory_Arena result;
     result.tag    = tag;
     result.expand = expand;
+    result.user   = nullptr; // TODO: pass this in?
     result.start  = start;
     result.at     = start;
     result.next   = (u8*)start + size;
@@ -197,8 +193,16 @@ struct Memory_Arena_Scope
     void* oldAt;
 
     Memory_Arena_Scope(Memory_Arena* arena) : arena(arena) { oldAt = arena->at; }
-    ~Memory_Arena_Scope() { reset(*arena, oldAt); }
+    ~Memory_Arena_Scope() { if (arena) reset(*arena, oldAt); }
+
+    Memory_Arena_Scope(Memory_Arena_Scope&& scope)
+        : arena(scope.arena), oldAt(scope.oldAt)
+    {
+        scope.arena = nullptr;
+    }
 };
+
+// TODO: allocation_scope for both arenas and push buffers? Why different names?
 
 #define arena_scope_impl2(arena, counter) Memory_Arena_Scope _arenaScope##counter{&arena}
 #define arena_scope_impl1(arena, counter) arena_scope_impl2(arena, counter)
@@ -209,8 +213,14 @@ struct Push_Buffer_Scope
     Push_Buffer* buffer;
     void* oldAt;
 
-    Push_Buffer_Scope(Push_Buffer* buffer) : buffer(buffer) { oldAt = buffer->arena.at; }
-    ~Push_Buffer_Scope() { reset(buffer->arena, oldAt); buffer->count = 0; }
+    Push_Buffer_Scope(Push_Buffer& buffer) : buffer(&buffer) { oldAt = buffer.arena.at; }
+    ~Push_Buffer_Scope() { if (buffer) reset(buffer->arena, oldAt); buffer->count = 0; }
+
+    Push_Buffer_Scope(Push_Buffer_Scope&& scope)
+        : buffer(scope.buffer), oldAt(scope.oldAt)
+    {
+        scope.buffer = nullptr;
+    }
 };
 
 #define push_buffer_scope_impl2(buffer, counter) Push_Buffer_Scope _pushBufferScope##counter{&buffer}

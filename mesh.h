@@ -1,6 +1,3 @@
-#pragma once
-#include "platform.h"
-#include "primitives.h"
 
 enum Index_Size
 {

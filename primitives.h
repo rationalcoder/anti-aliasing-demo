@@ -1,13 +1,3 @@
-#pragma once
-#include "platform.h"
-#include "common.h"
-
-#include <glm/vec2.hpp>
-#include <glm/vec3.hpp>
-#include <glm/vec4.hpp>
-#include <glm/mat2x2.hpp>
-#include <glm/mat3x3.hpp>
-#include <glm/mat4x4.hpp>
 
 // NOTE(bmartin): the ctor versions of constructors are pointless on classes like Array_View.
 // It turns out that you can't get out default initialization of members if you add even one
@@ -20,6 +10,7 @@ using v4 = glm::vec4;
 using glm::mat2;
 using glm::mat3;
 using glm::mat4;
+using glm::quat;
 
 
 enum ctor { uninitialized };
@@ -67,28 +58,28 @@ struct Bitset
     b32 none()        const;
 };
 
-template <u32 N_> void
+template <u32 N_> inline void
 Bitset<N_>::set(u32 i)
 {
     u32 idx = i >> 5;
     _array[idx] |= (i - (idx << 5));
 }
 
-template <u32 N_> void
+template <u32 N_> inline void
 Bitset<N_>::unset(u32 i)
 {
     u32 idx = i >> 5;
     _array[idx] &= ~(i - (idx << 5));
 }
 
-template <u32 N_> b32
+template <u32 N_> inline b32
 Bitset<N_>::is_set(u32 i) const
 {
     u32 idx = i >> 5;
     return _array[idx] & (i - (idx << 5));
 }
 
-template <u32 N_> b32
+template <u32 N_> inline b32
 Bitset<N_>::all() const
 {
     for (u32 i = 0; i < element_count(); i++)
@@ -97,7 +88,7 @@ Bitset<N_>::all() const
     return true;
 }
 
-template <u32 N_> b32
+template <u32 N_> inline b32
 Bitset<N_>::none() const
 {
     for (u32 i = 0; i < element_count(); i++)
@@ -208,7 +199,7 @@ struct Value_Window
     // TODO(blake): foreach
 };
 
-template <typename Value_> void
+template <typename Value_> inline void
 Value_Window<Value_>::reset(Value_* values, u32 size)
 {
     this->values  = values;
@@ -219,7 +210,7 @@ Value_Window<Value_>::reset(Value_* values, u32 size)
     this->_valueWeight = 1.0f/size;
 }
 
-template <typename Value_> void
+template <typename Value_> inline void
 Value_Window<Value_>::reset(Value_* values, u32 size, Value_ value)
 {
     this->values  = values;
@@ -233,7 +224,7 @@ Value_Window<Value_>::reset(Value_* values, u32 size, Value_ value)
         this->values[i] = value;
 }
 
-template <typename Value_> void
+template <typename Value_> inline void
 Value_Window<Value_>::reset(Value_ value)
 {
     for (u32 i = 0; i < size; i++)
@@ -243,7 +234,7 @@ Value_Window<Value_>::reset(Value_ value)
     _oldest  = 0;
 }
 
-template <typename Value_> void
+template <typename Value_> inline void
 Value_Window<Value_>::add(Value_ value)
 {
     average -= _valueWeight * values[_oldest];

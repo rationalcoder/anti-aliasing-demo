@@ -72,8 +72,6 @@ namespace ImGui
 }
 */
 
-#include "primitives.h"
-
 #define IM_VEC2_CLASS_EXTRA                                                 \
         ImVec2(v2 f) { x = f.x; y = f.y; }                       \
         operator v2() const { return v2(x, y); }

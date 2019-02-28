@@ -1,19 +1,4 @@
-#include "renderer.h"
-
-#include <glm/matrix.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
-
-#include <GL/gl3w.h>
-
-#include "imgui.h"
-
-#include "memory.h"
-#include "tanks.h"
-#include "opengl_renderer.h"
-#include "game_rendering.h"
-#include "buffer.h"
-
+//
 //{ Utility
 
 static inline b32
@@ -450,7 +435,7 @@ stage_static_mesh(Render_Static_Mesh* cmd)
 static inline b32
 load_debug_cube_buffers(GLuint* vertexBuffer, GLuint* indexBuffer)
 {
-    Static_Mesh cube = make_cube(.5f);
+    Static_Mesh cube = make_cube_mesh(.5f);
 
     GLuint vbo = GL_INVALID_VALUE;
     GLuint ebo = GL_INVALID_VALUE;

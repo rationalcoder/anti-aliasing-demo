@@ -1,6 +1,3 @@
-#include "buffer.h"
-#include "platform.h"
-#include "tanks.h"
 
 extern void
 log_printf_(Log_Level level, const char* fmt, ...)

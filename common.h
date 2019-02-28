@@ -1,11 +1,7 @@
-#pragma once
-#include <assert.h>
-#include "platform.h"
-
 #ifdef TANKS_RARE_ASSERT
-    #define RareAssert(expr) assert(expr)
+    #define rare_assert(expr) assert(expr)
 #else
-    #define RareAssert(expr) ((void)0)
+    #define rare_assert(expr) ((void)0)
 #endif
 
 #define Gigabytes(x) (x * (1ULL << 30))
@@ -15,7 +11,7 @@
 #define InvalidCodePath() assert(!"Invalid code path.")
 #define NotImplemented() assert(!"Not Implemented.")
 #define StaticNotImplemented() static_assert(false, "Not Implemented.")
-#define ArraySize(arr) (sizeof(arr)/sizeof((arr)[0]))
+#define array_size(arr) (sizeof(arr)/sizeof((arr)[0]))
 
 #define FieldCount(type, field) (offsetof(type, field)/sizeof(field))
 #define AssertFirstField(type, field)\
