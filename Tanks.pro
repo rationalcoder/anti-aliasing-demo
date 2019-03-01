@@ -23,6 +23,7 @@ HEADERS += tanks.h \
     renderer.h \
     opengl_renderer.h \
     opengl_renderer.cpp \
+    game_rendering.h \
     buffer.h \
     obj_file.h \
     obj_file.cpp \
@@ -41,11 +42,7 @@ HEADERS += tanks.h \
     imgui_impl_win32.h \
     imgui_impl_win32.cpp \
     developer_ui.cpp \
-    spk_file.h \
-    geometry.h \
-    geometry.cpp \
-    game_rendering.cpp \
-    game_rendering.h
+    spk_file.h
 
 SOURCES += win32_tanks.cpp \
 

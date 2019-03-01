@@ -1,3 +1,36 @@
+#pragma once
+#include <GL/gl3w.h>
+#include <glm/matrix.hpp>
+
+#include "common.h"
+#include "memory.h"
+#include "mesh.h"
+#include "containers.h"
+
+#if 0 // @RemoveMe
+struct Staged_Static_Mesh
+{
+    GLuint vertexBuffer = GL_INVALID_VALUE;
+    GLuint normalBuffer = GL_INVALID_VALUE;
+    GLuint uvBuffer     = GL_INVALID_VALUE;
+    GLuint indexBuffer  = GL_INVALID_VALUE;
+    GLuint arrayObject  = GL_INVALID_VALUE;
+
+    GLuint diffuseMap  = GL_INVALID_VALUE;
+    GLuint normalMap   = GL_INVALID_VALUE;
+    GLuint specularMap = GL_INVALID_VALUE;
+
+    GLenum primitive = GL_INVALID_ENUM;
+    GLenum indexType = GL_INVALID_ENUM;
+
+    u32 vertexCount = 0;
+    u32 indexCount  = 0;
+
+    b32 has_diffuse_map()  const { return diffuseMap  != GL_INVALID_VALUE; }
+    b32 has_normal_map()   const { return normalMap   != GL_INVALID_VALUE; }
+    b32 has_specular_map() const { return specularMap != GL_INVALID_VALUE; }
+};
+#endif
 
 struct Staged_Colored_Index_Group
 {

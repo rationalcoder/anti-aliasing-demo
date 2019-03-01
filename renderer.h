@@ -1,3 +1,7 @@
+#pragma once
+#include "common.h"
+#include "memory.h"
+#include "mesh.h"
 
 enum Render_Command_Type : u32
 {

@@ -1,5 +1,6 @@
+#pragma once
+#include "primitives.h"
 
-//{ Keyboard
 enum Game_Key
 {
     GK_ESCAPE,
@@ -49,7 +50,7 @@ enum Game_Keymod : u8
     GKM_CS    = GKM_CNTL   | GKM_SHIFT,
     GKM_CA    = GKM_CNTL   | GKM_ALT,
     GKM_SA    = GKM_SHIFT  | GKM_ALT,
-    GKM_CSA   = GKM_CNTL   | GKM_SHIFT | GKM_ALT,
+    GKM_CSA   = GKM_CNTL | GKM_SHIFT | GKM_ALT,
     GKM_ALL   = GKM_CSA
 };
 
@@ -59,31 +60,6 @@ struct Game_Keyboard_State
     flag8 mod[GK_NUM_];
 };
 
-struct Game_Keyboard
-{
-    Game_Keyboard_State cur;
-    Game_Keyboard_State prev;
-
-    b32 pressed(Game_Key key) const;
-    b32 pressed(Game_Key key, Game_Keymod mod, Game_Keymod mod2 = GKM_ALL, Game_Keymod mod3 = GKM_ALL) const;
-    b32 pressed_exactly(Game_Key key, Game_Keymod mod) const;
-
-    b32 released(Game_Key key) const;
-    b32 released(Game_Key key, Game_Keymod mod, Game_Keymod mod2 = GKM_ALL, Game_Keymod mod3 = GKM_ALL) const;
-    b32 released_exactly(Game_Key key, Game_Keymod mod) const;
-
-    b32 held(Game_Key key) const;
-    b32 held(Game_Key key, Game_Keymod mod, Game_Keymod mod2 = GKM_ALL, Game_Keymod mod3 = GKM_ALL) const;
-    b32 held_exactly(Game_Key key, Game_Keymod mod) const;
-
-    b32 down(Game_Key key) const;
-    b32 down(Game_Key key, Game_Keymod mod, Game_Keymod mod2 = GKM_ALL, Game_Keymod mod3 = GKM_ALL) const;
-    b32 down_exactly(Game_Key key, Game_Keymod mod) const;
-};
-
-//}
-
-//{ Mouse
 enum Game_Mouse_Button : u32
 {
     MOUSE_LEFT   = 0x01,
@@ -108,13 +84,9 @@ struct Game_Mouse
     Game_Mouse_State prev;
 
     b32 drag_started() const { return !prev.dragging && cur.dragging; }
-    b32 pressed(Game_Mouse_Button b) const { return !(prev.buttons & b) && (cur.buttons & b); }
-    b32 released(Game_Mouse_Button b) const { return (prev.buttons & b) && !(cur.buttons & b); }
 };
 
-//}
 
-//{ Controller
 enum Game_Controller_Button : u32
 {
     BUTTON_A     = 0x01,
@@ -132,6 +104,7 @@ enum Game_Axis
     AXIS_NUM_
 };
 
+
 struct Game_Controller_State
 {
     u32 buttons = 0;
@@ -144,7 +117,27 @@ struct Game_Controller
     Game_Controller_State prev;
 };
 
-//}
+struct Game_Keyboard
+{
+    Game_Keyboard_State cur;
+    Game_Keyboard_State prev;
+
+    b32 pressed(Game_Key key) const;
+    b32 pressed(Game_Key key, Game_Keymod mod, Game_Keymod mod2 = GKM_ALL, Game_Keymod mod3 = GKM_ALL) const;
+    b32 pressed_exactly(Game_Key key, Game_Keymod mod) const;
+
+    b32 released(Game_Key key) const;
+    b32 released(Game_Key key, Game_Keymod mod, Game_Keymod mod2 = GKM_ALL, Game_Keymod mod3 = GKM_ALL) const;
+    b32 released_exactly(Game_Key key, Game_Keymod mod) const;
+
+    b32 held(Game_Key key) const;
+    b32 held(Game_Key key, Game_Keymod mod, Game_Keymod mod2 = GKM_ALL, Game_Keymod mod3 = GKM_ALL) const;
+    b32 held_exactly(Game_Key key, Game_Keymod mod) const;
+
+    b32 down(Game_Key key) const;
+    b32 down(Game_Key key, Game_Keymod mod, Game_Keymod mod2 = GKM_ALL, Game_Keymod mod3 = GKM_ALL) const;
+    b32 down_exactly(Game_Key key, Game_Keymod mod) const;
+};
 
 struct Game_Input
 {
@@ -152,8 +145,6 @@ struct Game_Input
     Game_Controller controller;
     Game_Mouse mouse;
 };
-
-//{ Keyboard
 
 inline b32
 Game_Keyboard::pressed(Game_Key key) const
@@ -270,10 +261,6 @@ Game_Keyboard::down_exactly(Game_Key key, Game_Keymod mod) const
     return isDown;
 }
 
-//}
-
-//{ Input Smoothing
-
 struct Input_Smoother
 {
     f32 mouseDragXValues[2] = {};
@@ -290,8 +277,8 @@ struct Input_Smoother
 inline
 Input_Smoother::Input_Smoother()
 {
-    mouseDragXWindow.reset(mouseDragXValues, array_size(mouseDragXValues), 0);
-    mouseDragYWindow.reset(mouseDragYValues, array_size(mouseDragYValues), 0);
+    mouseDragXWindow.reset(mouseDragXValues, ArraySize(mouseDragXValues), 0);
+    mouseDragYWindow.reset(mouseDragYValues, ArraySize(mouseDragYValues), 0);
 }
 
 inline v2
@@ -309,5 +296,3 @@ Input_Smoother::reset_mouse_drag()
     mouseDragXWindow.reset(0);
     mouseDragYWindow.reset(0);
 }
-
-//}

@@ -1,22 +1,10 @@
+#include "tanks.cpp"
+
 #include <GL/gl3w.h>
 #include <GL/gl.h>
 #include <GL/wglext.h>
 
-#include "tanks.cpp"
-
-#include "opengl_renderer.h"
-#include "opengl_renderer.cpp"
-
-#define STB_IMPLEMENTATION
-#include "stb.h"
-
 #include "imgui_impl_win32.h"
-#include "imgui.cpp"
-#include "imgui_widgets.cpp"
-#include "imgui_draw.cpp"
-#include "imgui_demo.cpp"
-#include "imgui_impl_win32.cpp"
-
 
 #ifndef WIN32_LEAN_AND_MEAN
     #define WIN32_LEAN_AND_MEAN
@@ -103,7 +91,7 @@ static inline void
 win32_add_input_character(Win32_State* state, u16 c)
 {
     u8 size = state->keyboard.textSize;
-    if (size + 1 < array_size(state->keyboard.textInput)) {
+    if (size + 1 < ArraySize(state->keyboard.textInput)) {
         state->keyboard.textInput[size]     = c;
         state->keyboard.textInput[size + 1] = '\0';
         state->keyboard.textSize++;
@@ -811,7 +799,7 @@ required_pages(u64 bytes, u32 pageSize)
 static inline void
 win32_allocate_memory(Win32_State* state, Game_Memory* request)
 {
-    constexpr umm kArenaCount = array_size(request->arenas);
+    constexpr umm kArenaCount = ArraySize(request->arenas);
 
     umm firstChunkOffsets[kArenaCount] = {};
     umm fullContiguousSize = 0;
@@ -873,11 +861,11 @@ static b32
 win32_expand_arena(Memory_Arena* arena, umm size)
 {
     u8* at = (u8*)arena->at;
-    if (at + size > (u8*)arena->start + arena->max)
+    if (at + size > at + arena->max)
         return win32_failed_expand_arena(arena, size);
 
-    rare_assert(is_aligned(arena->next, 4096));
-    rare_assert((u8*)arena->next >= at);
+    RareAssert(is_aligned(arena->next, 4096));
+    RareAssert((u8*)arena->next >= at);
 
     // Acount for the space still left in the current chunk.
     umm neededSize       = size - ((u8*)arena->next - at);
@@ -1070,3 +1058,11 @@ WinMain(HINSTANCE /* hInstance */,
     return 0;
 }
 
+#define STB_IMPLEMENTATION
+#include "stb.h"
+
+#include "imgui.cpp"
+#include "imgui_widgets.cpp"
+#include "imgui_draw.cpp"
+#include "imgui_demo.cpp"
+#include "imgui_impl_win32.cpp"

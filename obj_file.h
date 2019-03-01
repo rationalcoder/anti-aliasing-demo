@@ -1,3 +1,6 @@
+#pragma once
+#include "common.h"
+#include "memory.h"
 
 struct OBJ_Material_Group
 {
@@ -61,6 +64,9 @@ enum Post_Process_Flags : u32
     PostProcess_FlipUVs     = 0x4
 };
 
-static OBJ_File obj_load(buffer32 buffer, u32 processFlags = 0);
-static MTL_File mtl_load(buffer32 buffer);
+extern OBJ_File
+obj_load(buffer32 buffer, u32 processFlags = 0);
+
+extern MTL_File
+mtl_load(buffer32 buffer);
 

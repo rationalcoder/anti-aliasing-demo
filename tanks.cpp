@@ -1,13 +1,17 @@
 #include "tanks.h"
 
+#include "stb.h"
+#include "obj_file.h"
+#include "game_rendering.h"
+
 #include "platform.cpp"
-#include "buffer.cpp"
+#include "opengl_renderer.cpp"
 #include "obj_file.cpp"
-#include "game_rendering.cpp"
-#include "geometry.cpp"
-#include "containers.cpp"
 #include "developer_ui.cpp"
 
+// @CRT @Dependency
+#include <math.h>
+#include <time.h>
 
 // All globals:
 
@@ -25,25 +29,10 @@ static Game_Resolution supportedResolutions[] = {
     Game_Resolution { 1920, 1080 },
 };
 
-static const char*
-to_cstr(AA_Technique t)
-{
-    switch (t) {
-    case AA_NONE:     return "None";
-    case AA_FXAA:     return "FXAA";
-    case AA_MSAA_2X:  return "MSAA 2X";
-    case AA_MSAA_4X:  return "MSAA 4X";
-    case AA_MSAA_8X:  return "MSAA 8X";
-    case AA_MSAA_16X: return "MSAA 16X";
-    }
-
-    return "Unknown";
-}
-
-static Game_Resolution
+static inline Game_Resolution
 tightest_supported_resolution(Game_Resolution candidate)
 {
-    Game_Resolution* highest = supportedResolutions + (array_size(supportedResolutions)-1);
+    Game_Resolution* highest = supportedResolutions + (ArraySize(supportedResolutions)-1);
     Game_Resolution* cur     = supportedResolutions;
 
     for (; cur != highest; cur++) {
@@ -54,7 +43,7 @@ tightest_supported_resolution(Game_Resolution candidate)
     return *highest;
 }
 
-static OBJ_File
+static inline OBJ_File
 read_obj_file(const char* path)
 {
     buffer32 buffer = read_file_buffer(path);
@@ -63,7 +52,7 @@ read_obj_file(const char* path)
 }
 
 // For stuff like setting a default specular coefficient.
-static void
+static inline void
 sanitize_materials(MTL_File& file)
 {
     for (u32 i = 0; i < file.materialCount; i++) {
@@ -73,7 +62,7 @@ sanitize_materials(MTL_File& file)
     }
 }
 
-static MTL_File
+static inline MTL_File
 read_mtl_file(string32 path)
 {
     buffer32 buffer = read_file_buffer(path);
@@ -84,53 +73,6 @@ read_mtl_file(string32 path)
     return result;
 }
 
-struct Debug_Walls
-{
-    v3* points;
-    u32 count;
-};
-
-static Debug_Walls
-make_debug_walls(const int* wallMap, int xDim, int yDim)
-{
-    Debug_Walls walls = {};
-
-    // TODO: temp_allocator()
-    Bucket_List<v3> points(gMem->temp);
-
-    f32 xOffset = -xDim/2.0f + 0.5f;
-    f32 yOffset = yDim/2.0f - 0.5f;
-
-    for (int y = 0; y < yDim; y++) {
-        for (int x = 0; x < xDim; x++) {
-            if (wallMap[y*xDim + x]) {
-                v3* p = points.add_forget();
-                p->x =  x + xOffset;
-                p->y = -y + yOffset;
-                p->z = 0.5f;
-            }
-        }
-    }
-
-    walls.points = flatten(points);
-    walls.count  = points.size();
-
-    return walls;
-}
-
-static Tank
-make_debug_tank(v2 forward)
-{
-    Tank result = {};
-
-    result.mesh        = make_solid_cube(.5f, v3(1, 1, 1));
-    result.boundingBox = compute_bounding_box(result.mesh);
-    result.forward     = forward;
-
-    return result;
-}
-
-#if 0
 static void
 setup_test_map()
 {
@@ -154,14 +96,16 @@ setup_test_map()
     Static_Mesh jeepMesh   = load_static_mesh(jeep, jeepMtl, "assets/", "jeep");
     Static_Mesh cyborgMesh = load_static_mesh(cyborg, cyborgMtl, "assets/cyborg/", "cyborg");
 
-    Static_Mesh floorMesh = make_box(v3(0, 0, -0.55f), v3(40, 40, 1), v3(0.005, 0.005, 0.009));
+    Static_Mesh floorMesh = make_box(v3(0, 0, -.55f), v3(40, 40, 1), v3(.005, .005, .009));
     floorMesh.tag = dup("floor");
 
     gGame->allocator.data = &gMem->perm;
 
     // TODO(blake): make these macros that clear the render target after queing commands.
     set_render_target(gGame->frameBeginCommands); {
-        cmd_set_clear_color(gGame->devUi.clearColor);
+        //cmd_set_clear_color(0.015f, 0.015f, 0.015f, 1.0f); // gray (sRGB)
+        cmd_set_clear_color(.05f, .05f, .05f, 1.0f);
+        //cmd_set_clear_color(0.55f, 0.15f, 0.015f, 1.0f); // orange
         cmd_set_projection_matrix(glm::perspective(glm::radians(gGame->camera.fov), 16.0f/9.0f, .1f, 100.0f));
         cmd_set_view_matrix(gGame->camera.view_matrix());
         cmd_set_viewport(gGame->clientRes);
@@ -169,26 +113,24 @@ setup_test_map()
 
     set_render_target(gGame->residentCommands); {
 
-        v3 debugColor { .1f, .1f, .1f };
+        mat4 xform;
 
-        //v3 lightPos   { -3, 1, 3 };
-        v3 lightPos   { -3, 1, 1 };
+        cmd_render_static_mesh(floorMesh, xform);
+
+        v3 lightPos   { -3, 1, 3 };
         v3 lightColor {  1, 1, 1 };
 
         cmd_render_point_light(lightPos, lightColor);
         cmd_render_debug_cube(lightPos, .15f, lightColor);
 
-        mat4 xform;
-
-        cmd_render_static_mesh(floorMesh, xform);
-        cmd_render_debug_cubes(view_of(debugWalls.points, debugWalls.count), 0.5f, debugColor);
+        v3 color { .1f, .1f, .1f };
 
         Grid grid = make_xy_grid(20, 20);
-        cmd_render_debug_lines(grid.vertices, grid.vertexCount, debugColor);
+        cmd_render_debug_lines(grid.vertices, grid.vertexCount, color);
 
         v3 centers[20] = {};
         points_by_step(20, v3(-10.5f, 10.5f, 0.0f), v3(0, -.5, 0), centers);
-        cmd_render_debug_cubes(view_of(centers), .5f, debugColor);
+        cmd_render_debug_cubes(view_of(centers), .5f, color);
 
         xform = glm::rotate(xform, glm::pi<f32>()/2, v3(1, 0, 0));
         xform = glm::scale(xform, v3(.02f));
@@ -218,93 +160,6 @@ setup_test_map()
         //cmd_render_debug_lines(boxNormals.n, boxNormals.vertexCount, v3(0, 0, 1));
     }
 }
-#endif
-
-static void
-setup_test_map()
-{
-    gGame->camera.look_at(v3(0, 5, 5), v3(0, 0, 0));
-    gGame->camera.fov = 75;
-
-    gGame->allocator.data = &gMem->modelLoading;
-
-    Static_Mesh floorMesh = make_box(v3(0, 0, -0.55f), v3(40, 40, 1), v3(0.005, 0.005, 0.009));
-    floorMesh.tag = dup("floor");
-
-    int walls[40][40] = {
-        { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 },
-        { 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
-        { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-    };
-
-    gGame->allocator.data = &gMem->perm;
-
-    // TODO(blake): make these macros that clear the render target after queing commands.
-    set_render_target(gGame->frameBeginCommands); {
-        cmd_set_clear_color(gGame->devUi.clearColor);
-        cmd_set_projection_matrix(glm::perspective(glm::radians(gGame->camera.fov), 16.0f/9.0f, .1f, 100.0f));
-        cmd_set_view_matrix(gGame->camera.view_matrix());
-        cmd_set_viewport(gGame->clientRes);
-    }
-
-    set_render_target(gGame->residentCommands); {
-
-        v3 wallColor { .5f, .5f, .5f };
-        v3 gridColor { .1f, .1f, .1f };
-
-        //v3 lightPos   { -3, 1, 3 };
-        v3 lightPos   { -3, 1, 1 };
-        v3 lightColor {  1, 1, 1 };
-
-        cmd_render_point_light(lightPos, lightColor);
-        cmd_render_debug_cube(lightPos, .15f, lightColor);
-
-        mat4 xform;
-
-        cmd_render_static_mesh(floorMesh, xform);
-
-        Debug_Walls debugWalls = make_debug_walls((int*)walls, 40, 40);
-        cmd_render_debug_cubes(view_of(debugWalls.points, debugWalls.count), 1, wallColor);
-
-        Grid grid = make_xy_grid(20, 20);
-        cmd_render_debug_lines(grid.vertices, grid.vertexCount, gridColor);
-    }
-}
 
 extern b32
 game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes)
@@ -329,7 +184,6 @@ game_init(Game_Memory* memory, Platform* platform, Game_Resolution clientRes)
     gGame->residentCommands   = sub_allocate(gMem->perm, Kilobytes(4), Kilobytes(8), "Resident Game Render Commands");
 
     gGame->targetRenderCommandBuffer = &gGame->frameBeginCommands;
-    gGame->tanks.reset(memory->perm);
 
     setup_test_map();
 
@@ -553,8 +407,11 @@ game_tick(f32 dt)
         return;
     }
 
-    if (kb.released(GK_RETURN, GKM_ALT))
+    if (kb.released(GK_RETURN, GKM_ALT)) {
+        log_debug("going fullscreen\n");
         platform_toggle_fullscreen();
+        log_debug("done\n");
+    }
 
     if (kb.released(GK_F5))
         gGame->showDeveloperUi = !gGame->showDeveloperUi;
@@ -562,7 +419,7 @@ game_tick(f32 dt)
     if (gGame->showDeveloperUi)
         show_developer_ui(gGame->devUi);
 
-    constexpr f32 cameraV = 5; // m/s
+    constexpr f32 cameraV = 2; // m/s
 
     auto& camera = gGame->camera;
 

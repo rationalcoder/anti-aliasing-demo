@@ -1,3 +1,15 @@
+#pragma once
+
+#ifdef _WIN64
+    #include "win32_tanks.h"
+#else
+    #error "Unsupported platform"
+#endif
+
+#include <stdint.h>
+#include <stdarg.h>
+
+#include "globals.h"
 
 // NOTE(blake): the standard ones confuse Qt Creator.
 #define MAX_UINT(type) ~(type)0

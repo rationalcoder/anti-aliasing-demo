@@ -1,50 +1,14 @@
+#pragma once
+
 #define USING_IMGUI 1
 
-#ifdef _WIN64
-    #include "win32_tanks.h"
-#else
-    #error "Unsupported platform"
-#endif
-
-// @CRT @Dependency
-#include <new>
-
-#include <stdint.h>
-#include <stdarg.h>
-#include <assert.h>
-#include <assert.h>
-#include <math.h>
-#include <time.h>
-
-// @Dependency
-#include <glm/vec3.hpp>
-#include <glm/vec2.hpp>
-#include <glm/vec4.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/rotate_vector.hpp>
-#include <glm/gtc/quaternion.hpp>
-#include <glm/gtx/quaternion.hpp>
-#include <glm/matrix.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
-
-#include "globals.h"
-#include "platform.h"
 #include "common.h"
-#include "primitives.h"
 #include "memory.h"
-#include "buffer.h"
+#include "platform.h"
+#include "primitives.h"
 #include "input.h"
 #include "camera.h"
-#include "mesh.h"
 #include "renderer.h"
-#include "containers.h"
-#include "obj_file.h"
-#include "geometry.h"
-#include "game_rendering.h"
-#include "developer_ui.h"
-
-#include "stb.h"
 #include "imgui.h"
 
 
@@ -56,13 +20,12 @@ constexpr u32 target_frame_time_us() { return 16667; }
 constexpr int target_opengl_version_major() { return 4; }
 constexpr int target_opengl_version_minor() { return 3; }
 
-
 struct Game_Frame_Stats
 {
     u64 frameTimes[5]; // us
     u64_window frameTimeWindow;
 
-    Game_Frame_Stats() { frameTimeWindow.reset(frameTimes, array_size(frameTimes), 16667); }
+    Game_Frame_Stats() { frameTimeWindow.reset(frameTimes, ArraySize(frameTimes), 16667); }
 
     f32 fps() const { return (f32)(1000000/frameTimeWindow.average); }
 };
@@ -77,11 +40,23 @@ struct Game_State
     Game_State* (*update)(void*) = nullptr;
 };
 
-struct Tank
+inline const char*
+to_cstr(AA_Technique t)
 {
-    Static_Mesh mesh;
-    AABB boundingBox;
-    v2 forward;
+    switch (t) {
+    case AA_NONE:     return "None";
+    case AA_FXAA:     return "FXAA";
+    case AA_MSAA_2X:  return "MSAA 2X";
+    case AA_MSAA_4X:  return "MSAA 4X";
+    case AA_MSAA_8X:  return "MSAA 8X";
+    case AA_MSAA_16X: return "MSAA 16X";
+    }
+
+    return "Unknown";
+}
+
+struct Developer_UI
+{
 };
 
 struct Game
@@ -107,8 +82,6 @@ struct Game
     Push_Buffer  residentCommands;
 
     Developer_UI devUi;
-
-    Bucket_List<Tank> tanks;
 
     bool showDeveloperUi = false;
     b32 shouldQuit = false;

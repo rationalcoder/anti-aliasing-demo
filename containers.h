@@ -1,3 +1,7 @@
+#pragma once
+#include "common.h"
+#include "memory.h"
+#include "tanks.h"
 
 template <typename T_, u32 Size_>
 struct Bucket
@@ -79,7 +83,7 @@ struct Bucket_List
 
     explicit Bucket_List(ctor) noexcept {}
     explicit Bucket_List(Memory_Arena& arena) noexcept;
-    Bucket_List() noexcept = default;
+    Bucket_List() noexcept : _head(), _tail(), _next(), _arena(), _size() {}
 
     void reset(Memory_Arena& arena) noexcept { new (this) Bucket_List<T_, BucketSize_>(arena); }
 
@@ -262,6 +266,14 @@ Bucket_Array<T_, BucketSize_>::add(T_ val)
 
 #endif
 
-template <typename T_, u32 BucketSize_> static T_*
-flatten(const Bucket_List<T_, BucketSize_>& list);
+template <typename T_, u32 BucketSize_> inline T_*
+flatten(const Bucket_List<T_, BucketSize_>& list)
+{
+    T_* flat = allocate_array(list.size(), T_);
 
+    u32 i = 0;
+    for (auto& e : list)
+        flat[i++] = e;
+
+    return flat;
+}
